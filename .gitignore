@@ -1,0 +1,15 @@
+# STM32CubeIDE / Eclipse
+Debug/
+Release/
+.settings/
+*.launch
+
+# 編譯暫存檔
+*.o
+*.d
+*.su
+*.elf
+*.bin
+*.hex
+*.map
+*.list

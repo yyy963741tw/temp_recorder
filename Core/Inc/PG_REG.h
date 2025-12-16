@@ -1,0 +1,85 @@
+#ifndef PG_REG_H
+#define	PG_REG_H
+
+#define I2CS_ADDR_1001XXX_RW	0x90
+#define PG_REG_SIZE				2048
+
+#define	VMEAS_VDD				0x0000
+#define	VMEAS_VBL				0x0002
+//#define	VMEAS_VBL				0x0002
+//#define	VMEAS_VDD0				0x0000
+//#define	VMEAS_VBL0				0x0002
+//#define	VMEAS_VDD1				0x0004
+//#define	VMEAS_VBL1				0x0006
+//#define	VMEAS_AVDD				0x0008
+//#define	VMEAS_VGH				0x000A
+//#define	VMEAS_VGL				0x000C
+//
+//#define	IMEAS_VDD0				0x000E
+//#define	IMEAS_VBL0				0x0010
+//#define	IMEAS_AVDD0				0x0012
+//#define	IMEAS_VGH0				0x0014
+//#define	IMEAS_VGL0				0x0016
+//
+//#define	IMEAS_VDD1				0x0018
+//#define	IMEAS_VBL1				0x001A
+//#define	IMEAS_AVDD1				0x001C
+//#define	IMEAS_VGH1				0x001E
+//#define	IMEAS_VGL1				0x0020
+
+#define	IMEAS_VDD0				0x0004
+#define	IMEAS_VBL0				0x0006
+//#define	IMEAS_VBL0				0x0010
+//#define	IMEAS_VDD1				0x0012
+//#define	IMEAS_VBL1				0x0014
+//
+//#define	IMEAS_VDD2				0x0016
+//#define	IMEAS_VBL2				0x0018
+//
+////#define	IMEAS_VDDEX				0x001A
+//#define	IMEAS_VBLEX				0x001C
+
+#define	POWER_PROTECT			0x0008
+	#define	VDD_PROTECT_OCP					0x01
+	#define	VDD_PROTECT_OVP					0x02
+	#define	VDD_PROTECT_UVP					0x04
+	#define	VBL_PROTECT_OCP					0x08
+	#define	VBL_PROTECT_OVP					0x10
+	#define	VBL_PROTECT_UVP					0x20
+	#define	V12_PROTECT_OCP					0x40
+
+#define	SYSTEM_ERROR			0x0009
+//	#define SYSTEM_ERROR_BIT_NO_UID			0x01
+	#define SYSTEM_ERROR_BIT_IIC_FAIL		0x02
+//	#define SYSTEM_ERROR_BIT_ZQ_FAIL		0x04
+//	#define SYSTEM_ERROR_BIT_TIMING_SET		0x08
+//	#define SYSTEM_ERROR_BIT_7VM_FAIL		0x10
+	#define SYSTEM_ERROR_BIT_VCAB_FAIL		0x20
+	#define SYSTEM_ERROR_BIT_ICAB_FAIL		0x40
+	#define SYSTEM_ERROR_BIT_VSCAN_FAIL		0x80
+
+#define	SYSTEM_STATUS			0x000A
+	#define SYSTEM_STATUS_BIT_READY			0x01
+	#define SYSTEM_STATUS_BIT_POW_STAT		0x02
+	#define SYSTEM_STATUS_BIT_CFG_DONE		0x04
+	#define SYSTEM_STATUS_BIT_POW_CTL		0x08
+	#define SYSTEM_STATUS_BIT_POW_MEAS		0x10
+//	#define SYSTEM_STATUS_BIT_POW_MEAS		0x20
+#define	MCU_VER					0x000B
+//	#define SYSTEM_STATUS_BIT_POW_ON		0x40
+//	#define SYSTEM_STATUS_BIT_POW_OFF		0x80
+
+#define	UPDATE_CONTROL			0x0020
+	#define UPDATE_CONTROL_BIT_POW_MEAS		0x01
+	#define UPDATE_CONTROL_BIT_RESET		0x02
+
+#define	POWER_CONTROL			0x0022
+	#define POWER_CONTROL_VDD				0x01
+	#define POWER_CONTROL_VBL				0x02
+#define	UPDATE_POWER_CONTROL	0x0023
+
+#define	POWER_CONFIG			0x0040
+#define	UPDATE_POWER_CONFIG		0x0052
+
+#endif	/* PG_REG_H */
+
