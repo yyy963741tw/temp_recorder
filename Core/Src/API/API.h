@@ -19,6 +19,7 @@ extern "C" {
 #include "tftlcd/tftlcd.h"
 //#include "tftlcd/font.h"
 #include <stdio.h> // 為了使用 sprintf
+#include <string.h> // 為了使用 strncmp 解析指令
 
 #include "sdram/sdram.h"
 
@@ -37,8 +38,8 @@ extern "C" {
 #define GRAPH_HEIGHT    220
 #define MAX_TEMP_POINTS 400 // ??�表顯示??��?大數??��?�數
 
-#define Y_MIN_TEMP  20.0f
-#define Y_MAX_TEMP  20.0f
+#define Y_MIN_TEMP  99.0f
+#define Y_MAX_TEMP  -99.9f
 
 
 typedef struct {
@@ -80,7 +81,7 @@ void API_Graph_UpdateTask(void);
 void API_Graph_DrawBarChart(void);
 
 // --- *** 結束 *** ---
-
+void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len);
 
 extern GRAPH_DATA_Handle  _ahData[MAX_TMP117_SENSORS];   // *** 修改：改為資料控制代碼的陣列 ***
 //extern GRAPH_DATA_Handle  _ahData_LTC2983[20];   // *** for_LTC2983_0  ***

@@ -196,7 +196,7 @@ int API_Init(){
 	MX_DMA2D_Init();
 
 	MX_CRC_Init();//for GUI_INIT
-
+	MX_USB_DEVICE_Init();
 
 	SDRAM_Init(MX_FMC_Init, &hsdram1, SDRAM_A);           //初始化SDRAM
 	HAL_Delay(100); //  100ms 的延遲
@@ -243,6 +243,10 @@ int API_Init(){
 	if (SG_ECP5_GetVersion(&API0.fpga_version) !=0){
 		return -3;
 	}
+//	GUI_Init();
+//	GUI_SetBkColor(GUI_YELLOW);
+//	GUI_Clear();
+
 	API_Graph_Init();
 
 
@@ -490,7 +494,7 @@ void API_Graph_Init(void)
 	GRAPH_SetColor(hGraph, GUI_GRAY, GRAPH_CI_BORDER);  // 邊框色
 	GRAPH_SetGridVis(hGraph, 1);                        // 顯示網格
 	GRAPH_SetGridDistX(hGraph, 50);                     // X 軸網格間距
-	GRAPH_SetGridDistY(hGraph, 44);                     // Y 軸網格間距 (2 度 = 44 像素)
+	GRAPH_SetGridDistY(hGraph, 39);                     // Y 軸網格間距
 	GRAPH_SetGridFixedX(hGraph, 1);                     // 固定 X 軸網格
 
 	// *** 迴圈：建立資料物件 ***
@@ -527,7 +531,7 @@ void API_Graph_Init(void)
 	//	}
 
 	// 1. 建立垂直 (Y 軸) 刻度
-	_hScaleV = GRAPH_SCALE_Create(25, GUI_TA_RIGHT | GUI_TA_VCENTER, GRAPH_SCALE_CF_VERTICAL, 44);
+	_hScaleV = GRAPH_SCALE_Create(25, GUI_TA_RIGHT | GUI_TA_VCENTER, GRAPH_SCALE_CF_VERTICAL, 39);
 	GRAPH_SCALE_SetFont(_hScaleV, GUI_FONT_6X8);
 	GRAPH_SCALE_SetTextColor(_hScaleV, GUI_BLACK);
 	GRAPH_AttachScale(hGraph, _hScaleV);
@@ -538,9 +542,14 @@ void API_Graph_Init(void)
 	float Y_RANGE = API0.graph_y_max - API0.graph_y_min; // 10.0
 	if (Y_RANGE <= 0) Y_RANGE = 1.0f; // 防止除以零
 
-	// 3. 設定 Offset, Factor, NumDecs
-	GRAPH_SCALE_SetOff(_hScaleV, -1*GRAPH_HEIGHT*(API0.graph_y_min/Y_RANGE)); // 像素偏移量
-	GRAPH_SCALE_SetFactor(_hScaleV, (Y_RANGE / (float)GRAPH_HEIGHT)); // 因子
+	// 舊程式碼
+	// GRAPH_SCALE_SetOff(_hScaleV, -1*GRAPH_HEIGHT*(API0.graph_y_min/Y_RANGE));
+	// GRAPH_SCALE_SetFactor(_hScaleV, (Y_RANGE / (float)GRAPH_HEIGHT));
+
+	// 新程式碼
+	float data_height = (float)(GRAPH_HEIGHT - 5 - 20); // 扣除上下邊框 (5+20)
+	GRAPH_SCALE_SetOff(_hScaleV, -1 * data_height * (API0.graph_y_min / Y_RANGE));
+	GRAPH_SCALE_SetFactor(_hScaleV, (Y_RANGE / data_height));
 	GRAPH_SCALE_SetNumDecs(_hScaleV, 1); // 鎖定為 0 位小數
 	//	WM_SetBkColor(_hScaleV, GUI_WHITE);
 
@@ -663,13 +672,13 @@ void API_Graph_UpdateTask(void)
 	if (needs_rescale)
 	{
 		// 1. 設定新的 Y 軸範圍
-		API0.graph_y_min = new_min - 1.0f; // 比最小值再低 1 度
-		API0.graph_y_max = new_max + 1.0f; // 比最大值再高 1 度
+		API0.graph_y_min = new_min - 0.1f; // 比最小值再低 0.1 度
+		API0.graph_y_max = new_max + 0.1f; // 比最大值再高 0.1 度
 
 		// (確保最小範圍，例如至少 5 度)
-//		if ((API0.graph_y_max - API0.graph_y_min) < 5.0f) {
-//			API0.graph_y_max = API0.graph_y_min + 5.0f;
-//		}
+		//		if ((API0.graph_y_max - API0.graph_y_min) < 5.0f) {
+		//			API0.graph_y_max = API0.graph_y_min + 5.0f;
+		//		}
 
 		// 2. 重新計算 Y_RANGE
 		float Y_RANGE = API0.graph_y_max - API0.graph_y_min;
@@ -680,22 +689,32 @@ void API_Graph_UpdateTask(void)
 		//		GRAPH_SCALE_SetFactor(_hScaleV, (Y_RANGE / (float)GRAPH_HEIGHT));
 
 		// 4. (強健性) 檢查 _hScaleV 是否有效，然後 *只執行一次* Invalidate
+		// ... 在 API_Graph_UpdateTask 函式中 ...
+
 		// 3. 從圖表中分離並刪除 *舊* 的 Y 軸物件
-		//    (這些函式來自 GRAPH.h，它已包含在 API.h 中)
 		if (_hScaleV) {
 			GRAPH_DetachScale(hGraph, _hScaleV);
 			GRAPH_SCALE_Delete(_hScaleV);
-//			WM_DeleteWindow(hGraph);
 		}
-		//    (清除圖表左側 30 像素的邊框)
-//		GUI_SetBkColor(GUI_WHITE); // 使用圖表背景色
-//		GUI_ClearRect(GRAPH_X_START,      // X0 = 40
-//				GRAPH_Y_START,      // Y0 = 50
-//				GRAPH_X_START + 30 - 1,  // X1 = 69
-//				GRAPH_Y_START + GRAPH_HEIGHT - 1); // Y1 = 269
+
+		// --- [修正] 強制清除舊刻度 ---
+		// 1. 切換繪圖目標為 hGraph 視窗 (這樣 (0,0) 就是圖表左上角)
+		WM_HWIN hOldWin = WM_SelectWindow(hGraph);
+
+		// 2. 設定顏色為邊框色 (GUI_YELLOW)
+		GUI_SetColor(GUI_YELLOW);
+
+		// 3. 填滿左側邊框區域，物理上蓋掉舊的數字
+		//    邊框寬度設定為 30，所以清除 0~29
+		GUI_FillRect(0, 0, 29, GRAPH_HEIGHT - 1);
+
+		// 4. 切換回原本的視窗，以免影響後續繪圖
+		WM_SelectWindow(hOldWin);
+		// ---------------------------
+
 
 		// 4. 重新建立一個 *新* 的 Y 軸物件 (複製自 API_Graph_Init)
-		_hScaleV = GRAPH_SCALE_Create(25, GUI_TA_RIGHT | GUI_TA_VCENTER, GRAPH_SCALE_CF_VERTICAL, 44);
+		_hScaleV = GRAPH_SCALE_Create(25, GUI_TA_RIGHT | GUI_TA_VCENTER, GRAPH_SCALE_CF_VERTICAL, 39);
 		GRAPH_SCALE_SetFont(_hScaleV, GUI_FONT_6X8);
 		GRAPH_SCALE_SetTextColor(_hScaleV, GUI_BLACK);
 		GRAPH_AttachScale(hGraph, _hScaleV);
@@ -942,4 +961,91 @@ void API_Graph_DrawBarChart(void)
 	}
 
 	GUI_Delay(100); // 延遲 100 毫秒
+}
+
+// --- [新增] 圖表模式管理變數 ---
+// 0: 折線圖 (Line Chart), 1: 長條圖 (Bar Chart)
+static int g_ChartMode = 0;
+/*
+// --- [新增] USB 指令處理與模式切換 ---
+void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len) {
+    if (Len < 7) return; // 忽略太短的雜訊
+
+    // 指令：切換到折線圖
+    if (strncmp((char*)Buf, "CMD:LINE", 8) == 0) {
+        if (g_ChartMode != 0) {
+            g_ChartMode = 0;
+            GUI_Clear();      // 清除畫面
+            API_Graph_Init(); // 重新初始化折線圖
+        }
+    }
+    // 指令：切換到長條圖
+    else if (strncmp((char*)Buf, "CMD:BAR", 7) == 0) {
+        if (g_ChartMode != 1) {
+            g_ChartMode = 1;
+            // 刪除折線圖視窗，釋放資源並避免干擾
+            if (hGraph) {
+                WM_DeleteWindow(hGraph);
+                hGraph = 0; // 把 Handle 清零
+            }
+            GUI_Clear(); // 清除畫面準備畫 Bar
+        }
+    }
+}
+*/
+
+// [修改] 支援手動打字的指令處理函式
+#define CMD_BUFFER_SIZE 64
+static char rx_buffer[CMD_BUFFER_SIZE]; // 靜態緩衝區
+static int rx_index = 0;                // 目前存到第幾個字
+
+void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len)
+{
+    // 遍歷收到的每一個字元
+    for (uint32_t i = 0; i < Len; i++) {
+        char c = (char)Buf[i];
+
+        // 檢查是否為結束符號 (Enter鍵: \r 或 \n)
+        if (c == '\r' || c == '\n') {
+            // 如果緩衝區有資料，就進行比對
+            if (rx_index > 0) {
+                rx_buffer[rx_index] = '\0'; // 補上字串結尾
+
+                // --- 開始比對 ---
+                GUI_SetFont(GUI_FONT_20_ASCII);
+                GUI_SetBkColor(GUI_YELLOW);
+                GUI_SetColor(GUI_RED);
+
+                if (strncmp(rx_buffer, "CMD:LINE", 8) == 0)
+                {
+                    g_ChartMode = 0;
+                    GUI_DispStringAt("DEBUG: Switch to LINE ", 10, 200);
+                }
+                else if (strncmp(rx_buffer, "CMD:BAR", 7) == 0)
+                {
+                    g_ChartMode = 1;
+                    GUI_DispStringAt("DEBUG: Switch to BAR  ", 10, 200);
+                }
+                else {
+                    // 顯示收到但不認識的指令 (除錯用)
+                     char debug_msg[50];
+                     sprintf(debug_msg, "Unknown: %s", rx_buffer);
+                     GUI_DispStringAt(debug_msg, 10, 200);
+                }
+                // ----------------
+
+                // 重置索引，準備接收下一條指令
+                rx_index = 0;
+            }
+        }
+        else {
+            // 如果是一般字元，存入緩衝區
+            if (rx_index < CMD_BUFFER_SIZE - 1) {
+                rx_buffer[rx_index++] = c;
+            } else {
+                // 緩衝區滿了，強制重置 (避免溢位)
+                rx_index = 0;
+            }
+        }
+    }
 }
