@@ -39,13 +39,15 @@ static int API_TMP117_Init()
 	memset(API0.tmp117_sensors, 0, sizeof(API0.tmp117_sensors));
 
 	// 2. 手動設定您期望的有效感測器總數
-	API0.num_tmp117_sensors = 3+4;
+//	API0.num_tmp117_sensors = 3+4;
+	API0.num_tmp117_sensors = 0;
+
 	//	API0.num_tmp117_sensors = 2;
 
 
 	// 3. 在陣列的任意位置，初始化您需要用到的感測器
 	//    初始化位於陣列索引 0 的感測器
-	TMP117_Init(&API0.tmp117_sensors[0], &(struct tmp117_init_param){
+/*	TMP117_Init(&API0.tmp117_sensors[0], &(struct tmp117_init_param){
 		.spi_idx = SPIM_FPGA, .cs_idx = 0xff, .channel = 0, .i2c_address = I2C_ADDR_SCL
 	});
 
@@ -90,6 +92,7 @@ static int API_TMP117_Init()
 			}
 		}
 	}
+	*/
 	return 0; // 所有 TMP117 都設定成功
 
 }
@@ -243,12 +246,12 @@ int API_Init(){
 	if (SG_ECP5_GetVersion(&API0.fpga_version) !=0){
 		return -3;
 	}
-//	GUI_Init();
-//	GUI_SetBkColor(GUI_YELLOW);
-//	GUI_Clear();
+	//	GUI_Init();
+	//	GUI_SetBkColor(GUI_YELLOW);
+	//	GUI_Clear();
 
-	API_Graph_Init();
-
+//	API_Graph_Init();
+	API_Graph_Init_OnlyBKColor();
 
 	return 0; // 所有初始化成功
 
@@ -472,7 +475,20 @@ void GPIO_Set_O(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOx, &GPIO_InitStruct);
 }
+// --- *** 圖表初始化函式 *** ---
+/**
+ * @brief  初始化 STemWin 圖表 (Graph Widget)
+ * @retval None
+ */
+void API_Graph_Init_OnlyBKColor(void)
+{
+	API0.graph_y_min = Y_MIN_TEMP;
+	API0.graph_y_max = Y_MAX_TEMP;
 
+	GUI_Init();
+	GUI_SetBkColor(GUI_YELLOW);
+	GUI_Clear();
+}
 
 // --- *** 圖表初始化函式 *** ---
 /**
@@ -567,7 +583,7 @@ void API_Graph_Init(void)
  * @brief  STemWin 圖表的更新迴圈 (應在 while(1) 中呼叫)
  * @retval None
  */
-void API_Graph_UpdateTask(void)
+void API_RunLineChartLogic(void)
 {
 
 	WM_ShowWindow(hGraph); // 關鍵：顯示 GRAPH 元件，以便繪製折線圖
@@ -586,9 +602,20 @@ void API_Graph_UpdateTask(void)
 	{
 		if (API0.tmp117_sensors[i].i2c_address != 0) {
 			GUI_SetColor(_aSensorColors[i % NUM_SENSOR_COLORS]);
-			sprintf(lcd_buffer, "CH%02d: %.2f C",
-					API0.tmp117_sensors[i].channel,
-					API0.tmp117_sensors[i].temperature_C);
+			//			sprintf(lcd_buffer, "CH%02d: %.2f C",
+			//					API0.tmp117_sensors[i].channel,
+			//					API0.tmp117_sensors[i].temperature_C);
+			float temp = API0.tmp117_sensors[i].temperature_C;
+
+			// [修改 3] 判斷是否為 0.0 (故障)，若故障則顯示 Error
+			if (temp > -0.001f && temp < 0.001f) {
+				sprintf(lcd_buffer, "CH%02d: Error", API0.tmp117_sensors[i].channel);
+			}
+			else {
+				sprintf(lcd_buffer, "CH%02d: %.2f C",
+						API0.tmp117_sensors[i].channel,
+						temp);
+			}
 			GUI_DispStringAt(lcd_buffer, x_pos, y_pos);
 
 			// 更新下一個文字的位置
@@ -652,6 +679,10 @@ void API_Graph_UpdateTask(void)
 		{
 			// (不過濾 skip counter，我們需要所有點來決定範圍)
 			float temp = API0.tmp117_sensors[i].temperature_C;
+			//忽略0度
+			if (temp > -0.001f && temp < 0.001f) {
+				continue;
+			}
 
 			if(_aDataSkipCounter[i] <2)
 				continue;
@@ -747,6 +778,12 @@ void API_Graph_UpdateTask(void)
 		if (API0.tmp117_sensors[i].i2c_address != 0) {
 			if(API0.tmp117_sensors[i].temperature_C > -270.0f) { //
 
+				// --- 如果是 0.0，不要畫圖 ---
+				float current_temp = API0.tmp117_sensors[i].temperature_C;
+				if (current_temp > -0.001f && current_temp < 0.001f) {
+					continue;
+				}
+
 				// 過濾前 2 筆 (這個邏輯現在在 rescale 後會重新開始)
 				if (_aDataSkipCounter[i] < 2)
 				{
@@ -754,7 +791,6 @@ void API_Graph_UpdateTask(void)
 					continue;
 				}
 
-				float current_temp = API0.tmp117_sensors[i].temperature_C;
 
 				// 映射 Y 軸
 				float mapped_temp = (current_temp - Y_MIN_CURRENT);
@@ -992,7 +1028,7 @@ void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len) {
         }
     }
 }
-*/
+ */
 
 // [修改] 支援手動打字的指令處理函式
 #define CMD_BUFFER_SIZE 64
@@ -1011,11 +1047,14 @@ void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len)
             if (rx_index > 0) {
                 rx_buffer[rx_index] = '\0'; // 補上字串結尾
 
-                // --- 開始比對 ---
+                // --- UI 顯示設定 ---
                 GUI_SetFont(GUI_FONT_20_ASCII);
                 GUI_SetBkColor(GUI_YELLOW);
                 GUI_SetColor(GUI_RED);
 
+                // --- 開始比對指令 ---
+
+                // 1. 切換圖表模式指令
                 if (strncmp(rx_buffer, "CMD:LINE", 8) == 0)
                 {
                     g_ChartMode = 0;
@@ -1026,11 +1065,34 @@ void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len)
                     g_ChartMode = 1;
                     GUI_DispStringAt("DEBUG: Switch to BAR  ", 10, 200);
                 }
+                // 2. [新增] 設定感測器指令
+                else if (strncmp(rx_buffer, "CMD:SET_117", 11) == 0)
+                {
+                    int ch, addr;
+                    // 使用 sscanf 解析參數
+                    // %*s : 跳過前面的 CMD:SET
+                    // %d  : 讀取通道 (十進位)
+                    // %x  : 讀取位址 (十六進位, 所以輸入 48 代表 0x48)
+                    if (sscanf(rx_buffer, "%*s %d %x", &ch, &addr) == 2)
+                    {
+                        // 呼叫設定函式
+                        API_ReInit_Single_Sensor(ch, addr);
+
+                        // 顯示除錯訊息
+                        char debug_msg[50];
+                        sprintf(debug_msg, "SET_117 CH:%d ADDR:0x%X OK", ch, addr);
+                        GUI_DispStringAt(debug_msg, 10, 200);
+                    }
+                    else
+                    {
+                        GUI_DispStringAt("DEBUG: CMD Format Error", 10, 200);
+                    }
+                }
+                // 3. 未知指令
                 else {
-                    // 顯示收到但不認識的指令 (除錯用)
-                     char debug_msg[50];
-                     sprintf(debug_msg, "Unknown: %s", rx_buffer);
-                     GUI_DispStringAt(debug_msg, 10, 200);
+                    char debug_msg[50];
+                    sprintf(debug_msg, "Unknown: %s", rx_buffer);
+                    GUI_DispStringAt(debug_msg, 10, 200);
                 }
                 // ----------------
 
@@ -1048,4 +1110,129 @@ void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len)
             }
         }
     }
+}
+
+// [新增] 總圖表更新任務 (負責根據模式分發)
+void API_Graph_UpdateTask(void)
+{
+	// 持續向電腦發送數據
+	API_USB_SendTelemetry();
+		return;
+    if (g_ChartMode == 0) {
+        // --- 模式 0: 折線圖 ---
+        API_RunLineChartLogic(); // 呼叫剛剛被改名的舊函式
+    }
+    else {
+        // --- 模式 1: 長條圖 ---
+        // 為了避免折線圖視窗干擾，先隱藏它
+        if (hGraph) {
+             WM_HideWindow(hGraph);
+        }
+
+        API_Graph_DrawBarChart(); // 呼叫長條圖繪製函式
+    }
+}
+
+void API_USB_SendTelemetry(void)
+{
+    static uint32_t last_send_time = 0;
+    // 限制發送頻率為 10Hz (每 100ms 一次)，避免資料量過大塞爆網頁
+    if (HAL_GetTick() - last_send_time < 100) return;
+    last_send_time = HAL_GetTick();
+
+    // [建議] 如果您的通道數多達 16~32 個，建議將 Buffer 加大到 1024 比較安全
+    // 原本 512 bytes 大約夠存 15-20 個通道的資料
+    char msg_buffer[1024];
+    int offset = 0;
+
+    // 1. JSON 表頭
+    offset += sprintf(msg_buffer + offset, "{\"data\":[");
+
+    int first = 1;
+    for (int i = 0; i < MAX_TMP117_SENSORS; i++) {
+        // 只傳送有效 (I2C 地址不為 0) 的感測器
+        if (API0.tmp117_sensors[i].i2c_address != 0) {
+            float temp = API0.tmp117_sensors[i].temperature_C;
+
+            // 加入逗號分隔
+            if (!first) {
+                offset += sprintf(msg_buffer + offset, ",");
+            }
+
+            // [修改重點] 增加 "a" (Address) 欄位
+            // 格式: {"c":通道, "a":位址, "v":溫度}
+            // c = Channel, a = Address (十進位), v = Value
+            // 網頁端收到 "a":72 會自動轉成 0x48 顯示
+            offset += sprintf(msg_buffer + offset, "{\"c\":%d,\"a\":%d,\"v\":%.2f}",
+                              API0.tmp117_sensors[i].channel,      // 通道編號
+                              API0.tmp117_sensors[i].i2c_address,  // [新增] I2C 位址
+                              temp);                               // 溫度值
+            first = 0;
+        }
+    }
+    // 2. JSON 結尾 + 換行符號
+    offset += sprintf(msg_buffer + offset, "]}\r\n");
+
+    // 3. 透過 USB 發送
+    // 注意: 確認 CDC_Transmit_FS 能一次發送這麼長的長度，有些實作限制 64 bytes
+    // 如果您的 USB 函式庫有自動分包功能則沒問題
+    CDC_Transmit_FS((uint8_t*)msg_buffer, offset);
+}
+
+// [新增] 單獨初始化指定通道
+// ch: 通道編號
+// addr: I2C 地址 (例如 0x48), 如果傳入 0 代表關閉該通道
+void API_ReInit_Single_Sensor(int ch, int addr)
+{
+    // 1. 安全檢查
+    if (ch < 0 || ch >= MAX_TMP117_SENSORS) return;
+
+    // =================================================================
+    // [關鍵修改] 檢查舊狀態
+    // 在被 TMP117_Init 覆蓋之前，先檢查這個位置原本有沒有掛載有效的感測器
+    // 假設 i2c_address 為 0 代表無效/未初始化
+    // =================================================================
+    int was_active = (API0.tmp117_sensors[ch].i2c_address != 0);
+
+    // 2. 初始化結構體 (這一步會覆蓋掉舊的 i2c_address)
+    TMP117_Init(&API0.tmp117_sensors[ch], &(struct tmp117_init_param){
+        .spi_idx = SPIM_FPGA,
+        .cs_idx = 0xff,
+        .channel = ch,       // 指定通道
+        .i2c_address = addr  // 指定地址
+    });
+
+    // 3. 硬體配置與計數器管理 (如果地址有效)
+    if (addr != 0) {
+
+        // =============================================================
+        // [關鍵修改] 更新總數
+        // 只有在「原本沒啟用 (was_active == 0)」且「現在啟用」時，總數才 +1
+        // 如果原本就是啟用的 (was_active == 1)，代表只是重置參數，不增加總數
+        // =============================================================
+        if (!was_active) {
+            API0.num_tmp117_sensors++;
+        }
+
+        // 嘗試寫入設定到 FPGA
+        int ret = TMP117_ConfigureOnFPGA(&API0.tmp117_sensors[ch]);
+
+        // (選用) 可以在這裡順便做一次讀取測試
+        // if (ret != 0 || TMP117_ReadTemperature(...) != 0) { ... }
+    }
+    else {
+        // [補充邏輯] 如果傳入 addr == 0 (要關閉這個通道)
+        // 且原本是啟用的 (was_active == 1)，則總數應該要扣除
+        if (was_active && API0.num_tmp117_sensors > 0) {
+            API0.num_tmp117_sensors--;
+        }
+    }
+
+    // 4. 清除該通道的舊圖表數據 (避免舊線條干擾)
+    if (_ahData[ch]) {
+        GRAPH_DATA_YT_Clear(_ahData[ch]);
+    }
+
+    // 5. 重置過濾計數器
+    _aDataSkipCounter[ch] = 0;
 }

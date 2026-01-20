@@ -75,13 +75,19 @@ void Update_LCD_Task(uint8_t font_size);
 
 
 // --- *** 宣告圖表 API 函式 *** ---
+void API_Graph_Init_OnlyBKColor(void);
+
 void API_Graph_Init(void);
 void API_Graph_UpdateTask(void);
 
 void API_Graph_DrawBarChart(void);
+void API_RunLineChartLogic(void);
 
 // --- *** 結束 *** ---
 void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len);
+void API_USB_SendTelemetry(void);
+void API_ReInit_Single_Sensor(int ch, int addr);
+
 
 extern GRAPH_DATA_Handle  _ahData[MAX_TMP117_SENSORS];   // *** 修改：改為資料控制代碼的陣列 ***
 //extern GRAPH_DATA_Handle  _ahData_LTC2983[20];   // *** for_LTC2983_0  ***
