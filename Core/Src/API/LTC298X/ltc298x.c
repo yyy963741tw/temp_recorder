@@ -14,7 +14,8 @@
 /******************************************************************************/
 static void ltc298x_cs_set(ltc298x_dev *device, int value);
 int32_t ltc298x_spi_rw(ltc298x_dev *dev, uint8_t cmd, uint16_t addr, uint8_t *data, uint16_t len);
-static uint32_t build_channel_word(const struct ltc2983_sensor *sensor);
+//static uint32_t build_channel_word(const struct ltc2983_sensor *sensor);
+uint32_t build_channel_word(const struct ltc2983_sensor *sensor);
 
 /******************************************************************************/
 /************************** FUNCTIONS DEFINITION ******************************/
@@ -220,7 +221,8 @@ int ltc298x_read_channel_temp(ltc298x_dev *device, uint8_t channel, float *tempe
 /**
  * @brief Helper to build the 32-bit channel assignment word.
  */
-static uint32_t build_channel_word(const struct ltc2983_sensor *sensor) {
+//static uint32_t build_channel_word(const struct ltc2983_sensor *sensor) {
+uint32_t build_channel_word(const struct ltc2983_sensor *sensor) {
 	uint32_t word = 0;
 	word |= ((uint32_t)sensor->type << 27);
 

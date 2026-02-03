@@ -2,10 +2,33 @@
 #define MCU_VERSION_STR		"V2.10.02"
 
 API API0;
+
+// ============================================================
+// [LTC2983 全域變數定義區]
+// 修正重點：補上缺少的變數，並統一名稱以符合函式呼叫
+// ============================================================
+
+// 1. LTC 狀態機與計時器
+LTC_Init_State_t g_LTC_State = LTC_STATE_IDLE;
+uint32_t g_LTC_Timer = 0;
+
+// 2. 裝置實例 (Device Instances) - [之前缺少]
+ltc298x_dev g_LTC_Devices[MAX_LTC2983_DEVICES];
+
+// 3. 初始化參數 (Init Params) - [之前導致編譯錯誤的原因]
+struct ltc298x_init_param g_LTC_InitParams[MAX_LTC2983_DEVICES];
+
+// 4. 感測器設定池 (Sensor Config Pool)
+// [修正] 名稱改為 g_LTC_SensorPool 以配合 API_LTC_Apply_Config
+ltc_sensor_storage_t g_LTC_SensorPool[MAX_LTC2983_DEVICES][20];
+//////////////////////////////////////////////////////////////////////
+
 //static GRAPH_DATA_Handle  _ahData;   // 資�?�物件控?���????�????
 GRAPH_DATA_Handle  _ahData[MAX_TMP117_SENSORS];   // *** 修改：改為資料控制代碼的陣列 ***
 //GRAPH_DATA_Handle  _ahData_LTC2983[20];   // *** 修改：改為資料控制代碼的陣列 ***
 
+// [新增] 全域變數：控制傳送間隔 (預設 1000ms)
+uint32_t g_TxInterval = 1000;
 
 GRAPH_SCALE_Handle _hScaleV;  // ??�直?��度控?���????�????
 GRAPH_SCALE_Handle _hScaleH;  // 水平?��度控?���????�????
@@ -28,6 +51,9 @@ const GUI_COLOR _aSensorColors[] = {
 		GUI_GRAY,  
 		GUI_ORANGE,
 };
+
+
+
 const unsigned int NUM_SENSOR_COLORS = (sizeof(_aSensorColors) / sizeof(GUI_COLOR));
 // 預設全部初始化為 0 (0 = 尚未過濾, 1 = 已過濾)
 static uint8_t _aDataSkipCounter[MAX_TMP117_SENSORS] = {0};
@@ -39,7 +65,7 @@ static int API_TMP117_Init()
 	memset(API0.tmp117_sensors, 0, sizeof(API0.tmp117_sensors));
 
 	// 2. 手動設定您期望的有效感測器總數
-//	API0.num_tmp117_sensors = 3+4;
+	//	API0.num_tmp117_sensors = 3+4;
 	API0.num_tmp117_sensors = 0;
 
 	//	API0.num_tmp117_sensors = 2;
@@ -47,7 +73,7 @@ static int API_TMP117_Init()
 
 	// 3. 在陣列的任意位置，初始化您需要用到的感測器
 	//    初始化位於陣列索引 0 的感測器
-/*	TMP117_Init(&API0.tmp117_sensors[0], &(struct tmp117_init_param){
+	/*	TMP117_Init(&API0.tmp117_sensors[0], &(struct tmp117_init_param){
 		.spi_idx = SPIM_FPGA, .cs_idx = 0xff, .channel = 0, .i2c_address = I2C_ADDR_SCL
 	});
 
@@ -92,9 +118,73 @@ static int API_TMP117_Init()
 			}
 		}
 	}
-	*/
+	 */
 	return 0; // 所有 TMP117 都設定成功
 
+}
+
+
+
+// [新增] 真正的記憶體池：2 個裝置，每個有 20 個通道
+ltc_sensor_storage_t g_LTC_SensorPool[MAX_LTC2983_DEVICES][20];
+
+// [修正版] 系統啟動時呼叫，連結所有指標與參數
+static int API_LTC_Hardware_Map()
+{
+    // 1. 設定總數
+    API0.num_ltc2983_devices = 2;
+
+    // 2. 清空記憶體
+    memset(&API0.ltc2983_devices, 0, sizeof(API0.ltc2983_devices));
+    memset(g_LTC_SensorPool, 0, sizeof(g_LTC_SensorPool));
+
+    // 清空 g_LTC 相關全域變數
+    memset(g_LTC_Devices, 0, sizeof(g_LTC_Devices));
+    memset(g_LTC_InitParams, 0, sizeof(g_LTC_InitParams));
+
+    // ==========================================
+    // 設定迴圈
+    // ==========================================
+    for (int i = 0; i < MAX_LTC2983_DEVICES; i++)
+    {
+        // --- A. 設定 SPI/CS 硬體參數 ---
+        int spi_index = 0;
+        int cs_index  = 0;
+
+        if (i == 0) {
+            spi_index = SPIM_LTC2983_1; // Device 1
+            cs_index  = 1;
+        } else if (i == 1) {
+            // spi_index = SPIM_LTC2983_2; // Device 2
+            // cs_index  = 2;
+        }
+
+        // --- B. 設定 API0 (建立指標陣列) ---
+        ltc2983_device_manager *mgr = &API0.ltc2983_devices[i];
+        mgr->dev_instance.spi_idx = spi_index;
+        mgr->dev_instance.cs_idx  = cs_index;
+
+        // [關鍵步驟 1] 這裡您正確地建立了一個「指標陣列」
+        // mgr->sensors 是一個陣列，裡面存放指向 SensorPool 的「指標」
+        for (int ch = 0; ch < 20; ch++) {
+            mgr->sensors[ch] = (struct ltc2983_sensor *)&g_LTC_SensorPool[i][ch];
+        }
+
+        // --- C. 設定 g_LTC (給 USB Init 用) ---
+        g_LTC_Devices[i].spi_idx = spi_index;
+        g_LTC_Devices[i].cs_idx  = cs_index;
+
+        g_LTC_InitParams[i].dev_id  = ID_LTC2983;
+        g_LTC_InitParams[i].spi_idx = spi_index;
+        g_LTC_InitParams[i].cs_idx  = cs_index;
+
+        // ⭐⭐⭐ [最重要修正] ⭐⭐⭐
+        // 不要直接轉型 SensorPool (會當機！)
+        // 而是要指向我們剛剛建立好的「指標陣列」 (mgr->sensors)
+        g_LTC_InitParams[i].sensors = mgr->sensors;
+    }
+
+    return 0;
 }
 
 // 初始化所有 LTC2983 設備的輔助函式
@@ -107,9 +197,11 @@ static int API_LTC2983_Init()
 		memset(&API0.ltc2983_devices[i], 0, sizeof(ltc2983_device_manager));
 	}
 
+
 	// --- 【已更正】手動設定第一個 LTC2983 (位於陣列索引 0) ---
 
 	ltc2983_device_manager *ltc_dev0 = &API0.ltc2983_devices[0];
+
 
 	// 填寫感測器陣列
 	ltc_dev0->sensors[8] = (struct ltc2983_sensor *)&ltc2983_thermocouple_k_9; // Channel 9
@@ -139,6 +231,7 @@ static int API_LTC2983_Init()
 	if (ltc298x_init(&ltc_dev0->dev_instance, &init_params_0) != 0) {
 		return -2; // LTC2983[0] 初始化失敗
 	}
+
 
 	/*
 	// --- 【已更正】手動設定第四個 LTC2983 (位於陣列索引 3) ---
@@ -239,7 +332,8 @@ int API_Init(){
 	if (API_TMP117_Init() != 0) {
 		return -1; // TMP117 初始化失敗
 	}
-	if (API_LTC2983_Init() != 0) {
+	//	if (API_LTC2983_Init() != 0) {
+	if (API_LTC_Hardware_Map() != 0) {
 		return -2; // LTC2983 初始化失敗
 	}
 
@@ -250,8 +344,9 @@ int API_Init(){
 	//	GUI_SetBkColor(GUI_YELLOW);
 	//	GUI_Clear();
 
-//	API_Graph_Init();
+	//	API_Graph_Init();
 	API_Graph_Init_OnlyBKColor();
+
 
 	return 0; // 所有初始化成功
 
@@ -275,7 +370,9 @@ int API_LTC2983_ReadMultipleTemperatures(ltc2983_device_manager devices[], unsig
 			found_count++;
 
 			for (int ch_idx = 0; ch_idx < 20; ch_idx++) {
-				if (current_ltc->sensors[ch_idx] != NULL) {
+				if (current_ltc->sensors[ch_idx] != NULL &&
+						current_ltc->sensors[ch_idx]->type != 0)
+				{
 					int read_status = ltc298x_read_channel_temp(
 							&current_ltc->dev_instance,
 							ch_idx + 1,
@@ -285,7 +382,11 @@ int API_LTC2983_ReadMultipleTemperatures(ltc2983_device_manager devices[], unsig
 					if (read_status != 0) {
 						current_ltc->temperatures[ch_idx] = -999.0f;
 					}
-					HAL_Delay(100);
+				}
+				else
+				{
+					// (選用) 如果通道關閉，強制歸零
+					//							current_ltc->temperatures[ch_idx] = 0.0f;
 				}
 			}
 
@@ -296,6 +397,103 @@ int API_LTC2983_ReadMultipleTemperatures(ltc2983_device_manager devices[], unsig
 	}
 	return 0;
 }
+
+//int API_LTC2983_ReadMultipleTemperatures(ltc2983_device_manager devices[], unsigned char num_devices_to_find, unsigned char array_size)
+//{
+//    if (!devices || num_devices_to_find == 0) {
+//        return -1;
+//    }
+//
+//    unsigned char found_count = 0;
+//
+//    // 遍歷所有設備
+//    for (int i = 0; i < array_size; i++)
+//    {
+//        ltc2983_device_manager *current_ltc = &devices[i];
+//
+//        // 只有當 SPI Index 有設定時才處理
+//        if (current_ltc->dev_instance.spi_idx != 0)
+//        {
+//            found_count++;
+//
+//            // 遍歷該設備的所有通道 (0~19)
+//            for (int ch_idx = 0; ch_idx < 20; ch_idx++)
+//            {
+//                // 只針對有設定的通道 (非 NULL) 進行測量
+//                if (current_ltc->sensors[ch_idx] != NULL)
+//                {
+//                    // ====================================================
+//                    // [步驟 1] 踩油門：發送轉換指令 (Kick)
+//                    // ====================================================
+//                    // 0x80 (Bit 7) = Start Conversion
+//                    // (ch_idx + 1) = 通道編號 (1~20)
+//                    uint8_t cmd = 0x80 | (ch_idx + 1);
+//
+//                    // 寫入 Command Status Register (0x000)
+//                    ltc298x_spi_rw(&current_ltc->dev_instance, LTC298X_SPI_WRITE_BYTE, 0x000, &cmd, 1);
+//
+//                    // ====================================================
+//                    // [步驟 2] 等紅燈：輪詢等待轉換完成 (Polling)
+//                    // ====================================================
+//                    // 我們不盲目 delay，而是不斷問晶片 "好了沒?"
+//                    // 這樣最穩定，不會讀到舊資料
+//
+//                    uint32_t start_tick = HAL_GetTick();
+//                    uint8_t status = 0xFF;
+//
+//                    do {
+//                        // 讀取狀態暫存器 (0x000)
+//                        ltc298x_spi_rw(&current_ltc->dev_instance, LTC298X_SPI_READ_BYTE, 0x000, &status, 1);
+//
+//                        // 判斷條件：
+//                        // Bit 7 (Start) 必須為 0 (代表不忙了)
+//                        // Bit 6 (Done)  必須為 1 (代表量好了)
+//                        // 0x40 = 0100 0000
+//                        if ((status & 0xC0) == 0x40)
+//                        {
+//                            break; // 完成！跳出等待迴圈
+//                        }
+//
+//                        // 超時保護 (Timeout)：避免硬體壞掉時程式卡死在這裡
+//                        // LTC2983 轉換時間通常 < 200ms，我們給它 300ms 寬限
+//                        if (HAL_GetTick() - start_tick > 300) {
+//                            // (選用) 可以在這裡印出錯誤訊息 GUI_DispString("Timeout");
+//                            break;
+//                        }
+//
+//                        // 稍微讓出 CPU，避免輪詢太密集佔用 Bus (可選)
+//                        // HAL_Delay(1);
+//
+//                    } while (1);
+//
+//                    // ====================================================
+//                    // [步驟 3] 收成：讀取結果 (Harvest)
+//                    // ====================================================
+//                    // 呼叫原本的讀取函式，這時候暫存器裡已經是最新的溫度了
+//                    int read_status = ltc298x_read_channel_temp(
+//                            &current_ltc->dev_instance,
+//                            ch_idx + 1,
+//                            &current_ltc->temperatures[ch_idx]
+//                    );
+//
+//                    // 錯誤處理
+//                    if (read_status != 0) {
+//                        current_ltc->temperatures[ch_idx] = -999.0f;
+//                    }
+//
+//                    // 注意：原本的 HAL_Delay(100) 已經不需要了，
+//                    // 因為上面的 [步驟 2] 已經精準等待過了。
+//                }
+//            }
+//
+//            if (found_count >= num_devices_to_find) {
+//                break;
+//            }
+//        }
+//    }
+//    return 0;
+//}
+
 /**
  */
 int API_TMP117_ReadMultipleTemperatures(tmp117_sensor sensors[], unsigned char num_sensors_to_find, unsigned char array_size)
@@ -1037,79 +1235,144 @@ static int rx_index = 0;                // 目前存到第幾個字
 
 void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len)
 {
-    // 遍歷收到的每一個字元
-    for (uint32_t i = 0; i < Len; i++) {
-        char c = (char)Buf[i];
+	// 遍歷收到的每一個字元
+	for (uint32_t i = 0; i < Len; i++) {
+		char c = (char)Buf[i];
 
-        // 檢查是否為結束符號 (Enter鍵: \r 或 \n)
-        if (c == '\r' || c == '\n') {
-            // 如果緩衝區有資料，就進行比對
-            if (rx_index > 0) {
-                rx_buffer[rx_index] = '\0'; // 補上字串結尾
+		// 檢查是否為結束符號 (Enter鍵: \r 或 \n)
+		if (c == '\r' || c == '\n') {
+			// 如果緩衝區有資料，就進行比對
+			if (rx_index > 0) {
+				rx_buffer[rx_index] = '\0'; // 補上字串結尾
 
-                // --- UI 顯示設定 ---
-                GUI_SetFont(GUI_FONT_20_ASCII);
-                GUI_SetBkColor(GUI_YELLOW);
-                GUI_SetColor(GUI_RED);
+				// --- UI 顯示設定 ---
+				GUI_SetFont(GUI_FONT_20_ASCII);
+				GUI_SetBkColor(GUI_YELLOW);
+				GUI_SetColor(GUI_RED);
 
-                // --- 開始比對指令 ---
+				// --- 開始比對指令 ---
 
-                // 1. 切換圖表模式指令
-                if (strncmp(rx_buffer, "CMD:LINE", 8) == 0)
-                {
-                    g_ChartMode = 0;
-                    GUI_DispStringAt("DEBUG: Switch to LINE ", 10, 200);
-                }
-                else if (strncmp(rx_buffer, "CMD:BAR", 7) == 0)
-                {
-                    g_ChartMode = 1;
-                    GUI_DispStringAt("DEBUG: Switch to BAR  ", 10, 200);
-                }
-                // 2. [新增] 設定感測器指令
-                else if (strncmp(rx_buffer, "CMD:SET_117", 11) == 0)
-                {
-                    int ch, addr;
-                    // 使用 sscanf 解析參數
-                    // %*s : 跳過前面的 CMD:SET
-                    // %d  : 讀取通道 (十進位)
-                    // %x  : 讀取位址 (十六進位, 所以輸入 48 代表 0x48)
-                    if (sscanf(rx_buffer, "%*s %d %x", &ch, &addr) == 2)
-                    {
-                        // 呼叫設定函式
-                        API_ReInit_Single_Sensor(ch, addr);
+				// 1. 切換圖表模式指令
+				if (strncmp(rx_buffer, "CMD:LINE", 8) == 0)
+				{
+					g_ChartMode = 0;
+					GUI_DispStringAt("DEBUG: Switch to LINE ", 10, 200);
+				}
+				else if (strncmp(rx_buffer, "CMD:BAR", 7) == 0)
+				{
+					g_ChartMode = 1;
+					GUI_DispStringAt("DEBUG: Switch to BAR  ", 10, 200);
+				}
+				// 2. 設定 TMP117 指令
+				else if (strncmp(rx_buffer, "CMD:SET_117", 11) == 0)
+				{
+					int ch, addr;
+					// 建議：直接從第 11 個字元開始解析參數，略過指令頭
+					if (sscanf(rx_buffer + 11, "%d %x", &ch, &addr) == 2)
+					{
+						if (ch >= 0 && ch < 16)
+						{
+							API0.tmp117_sensors[ch].temperature_C = 0.0f;
+						}
+						API_ReInit_Single_Sensor(ch, addr);
+						char debug_msg[50];
+						sprintf(debug_msg, "SET_117 CH:%d ADDR:0x%X OK", ch, addr);
+						GUI_DispStringAt(debug_msg, 10, 200);
+					}
+					else
+					{
+						GUI_DispStringAt("DEBUG: CMD Format Error", 10, 200);
+					}
+				}
+				// 3. 設定 LTC2983 指令
+				else if (strncmp(rx_buffer, "CMD:SET_LTC", 11) == 0)
+				{
+					int dev, ch, type;
+					uint32_t config = 0;
+					uint32_t data = 0;
 
-                        // 顯示除錯訊息
-                        char debug_msg[50];
-                        sprintf(debug_msg, "SET_117 CH:%d ADDR:0x%X OK", ch, addr);
-                        GUI_DispStringAt(debug_msg, 10, 200);
-                    }
-                    else
-                    {
-                        GUI_DispStringAt("DEBUG: CMD Format Error", 10, 200);
-                    }
-                }
-                // 3. 未知指令
-                else {
-                    char debug_msg[50];
-                    sprintf(debug_msg, "Unknown: %s", rx_buffer);
-                    GUI_DispStringAt(debug_msg, 10, 200);
-                }
-                // ----------------
+					// [修正] 移除原本導致判斷鍊斷裂的 else，並將錯誤處理移至內部
+					// sscanf 讀取參數 (略過前 11 個字元的指令頭)
+					int args_parsed = sscanf(rx_buffer + 11, "%d %d %d %x %x", &dev, &ch, &type, &config, &data);
 
-                // 重置索引，準備接收下一條指令
-                rx_index = 0;
-            }
-        }
-        else {
-            // 如果是一般字元，存入緩衝區
-            if (rx_index < CMD_BUFFER_SIZE - 1) {
-                rx_buffer[rx_index++] = c;
-            } else {
-                // 緩衝區滿了，強制重置 (避免溢位)
-                rx_index = 0;
-            }
-        }
-    }
+					// 至少要讀到 type (3個)
+					if (args_parsed >= 3)
+					{
+						if (dev >= 1 && dev <= MAX_LTC2983_DEVICES && ch >= 1 && ch <= 20)
+						{
+							int dev_idx = dev - 1;
+							int ch_idx = ch - 1;
+
+							if (type == 0)
+							{
+								// Disable
+								memset(&g_LTC_SensorPool[dev_idx][ch_idx], 0, sizeof(ltc_sensor_storage_t));
+								GUI_DispStringAt("LTC Ch Disabled", 10, 200);
+							}
+							else
+							{
+								// Enable
+								API_LTC_Apply_Config(dev_idx, ch_idx, type, config, data);
+
+								char dbg[64];
+								sprintf(dbg, "Set:%d Cfg:%X Dat:%X", type, (unsigned int)config, (unsigned int)data);
+
+								GUI_DispStringAt("LTC Updating...", 10, 200);
+								GUI_DispStringAt(dbg, 10, 220);
+
+								ltc298x_init(&g_LTC_Devices[dev_idx], &g_LTC_InitParams[dev_idx]);
+							}
+						}
+						else
+						{
+							GUI_DispStringAt("DEBUG: Invalid Dev/Ch", 10, 200);
+						}
+					}
+					else
+					{
+						// [修正] 這是 sscanf 解析失敗的 else，放在這裡才對
+						GUI_DispStringAt("DEBUG: LTC Format Error", 10, 200);
+					}
+				}
+				// 4. 設定傳送頻率指令
+				// [修正] 這個 else if 現在可以正確執行了，因為上方的 if-else 結構已修復
+				else if (strncmp(rx_buffer, "CMD:INTERVAL", 12) == 0)
+				{
+					int ms;
+					if (sscanf(rx_buffer + 12, "%d", &ms) == 1)
+					{
+						if (ms >= 10)
+						{
+							g_TxInterval = (uint32_t)ms;
+							char debug_msg[50];
+							sprintf(debug_msg, "SET FREQ: %d ms", ms);
+							GUI_DispStringAt(debug_msg, 10, 220);
+						}
+					}
+				}
+				// 5. 未知指令
+				else {
+					char debug_msg[50];
+					// 防止字串過長導致 Buffer Overflow，限制印出長度
+					snprintf(debug_msg, sizeof(debug_msg), "Unknown: %.10s...", rx_buffer);
+					GUI_DispStringAt(debug_msg, 10, 200);
+				}
+
+				// --- 指令處理結束，重置 buffer 索引 ---
+				rx_index = 0;
+			}
+		}
+		else {
+			// [修正] 這個 else 現在正確地包含在 for 迴圈內
+			// 如果是一般字元，存入緩衝區
+			if (rx_index < CMD_BUFFER_SIZE - 1) {
+				rx_buffer[rx_index++] = c;
+			} else {
+				// 緩衝區滿了，強制重置 (避免溢位)
+				rx_index = 0;
+			}
+		}
+	} // [修正] for 迴圈的結束括號在這裡
 }
 
 // [新增] 總圖表更新任務 (負責根據模式分發)
@@ -1117,122 +1380,328 @@ void API_Graph_UpdateTask(void)
 {
 	// 持續向電腦發送數據
 	API_USB_SendTelemetry();
-		return;
-    if (g_ChartMode == 0) {
-        // --- 模式 0: 折線圖 ---
-        API_RunLineChartLogic(); // 呼叫剛剛被改名的舊函式
-    }
-    else {
-        // --- 模式 1: 長條圖 ---
-        // 為了避免折線圖視窗干擾，先隱藏它
-        if (hGraph) {
-             WM_HideWindow(hGraph);
-        }
+	return;
+	if (g_ChartMode == 0) {
+		// --- 模式 0: 折線圖 ---
+		API_RunLineChartLogic(); // 呼叫剛剛被改名的舊函式
+	}
+	else {
+		// --- 模式 1: 長條圖 ---
+		// 為了避免折線圖視窗干擾，先隱藏它
+		if (hGraph) {
+			WM_HideWindow(hGraph);
+		}
 
-        API_Graph_DrawBarChart(); // 呼叫長條圖繪製函式
-    }
+		API_Graph_DrawBarChart(); // 呼叫長條圖繪製函式
+	}
 }
+
 
 void API_USB_SendTelemetry(void)
 {
-    static uint32_t last_send_time = 0;
-    // 限制發送頻率為 10Hz (每 100ms 一次)，避免資料量過大塞爆網頁
-    if (HAL_GetTick() - last_send_time < 100) return;
-    last_send_time = HAL_GetTick();
+	static uint32_t last_send_time = 0;
+	//使用 g_TxInterval 變數來決定傳送頻率
+	if (HAL_GetTick() - last_send_time < g_TxInterval) return;
+	last_send_time = HAL_GetTick();
 
-    // [建議] 如果您的通道數多達 16~32 個，建議將 Buffer 加大到 1024 比較安全
-    // 原本 512 bytes 大約夠存 15-20 個通道的資料
-    char msg_buffer[1024];
-    int offset = 0;
 
-    // 1. JSON 表頭
-    offset += sprintf(msg_buffer + offset, "{\"data\":[");
+	char msg_buffer[2048];
+	int offset = 0;
 
-    int first = 1;
-    for (int i = 0; i < MAX_TMP117_SENSORS; i++) {
-        // 只傳送有效 (I2C 地址不為 0) 的感測器
-        if (API0.tmp117_sensors[i].i2c_address != 0) {
-            float temp = API0.tmp117_sensors[i].temperature_C;
+	// 1. JSON 表頭
+	//	offset += sprintf(msg_buffer + offset, "{\"data\":[");
+	offset += sprintf(msg_buffer + offset, "{\"TMP117\":[");
 
-            // 加入逗號分隔
-            if (!first) {
-                offset += sprintf(msg_buffer + offset, ",");
-            }
 
-            // [修改重點] 增加 "a" (Address) 欄位
-            // 格式: {"c":通道, "a":位址, "v":溫度}
-            // c = Channel, a = Address (十進位), v = Value
-            // 網頁端收到 "a":72 會自動轉成 0x48 顯示
-            offset += sprintf(msg_buffer + offset, "{\"c\":%d,\"a\":%d,\"v\":%.2f}",
-                              API0.tmp117_sensors[i].channel,      // 通道編號
-                              API0.tmp117_sensors[i].i2c_address,  // [新增] I2C 位址
-                              temp);                               // 溫度值
-            first = 0;
-        }
-    }
-    // 2. JSON 結尾 + 換行符號
-    offset += sprintf(msg_buffer + offset, "]}\r\n");
+	int first = 1;
+	for (int i = 0; i < MAX_TMP117_SENSORS; i++) {
+		// 只傳送有效 (I2C 地址不為 0) 的感測器
+		if (API0.tmp117_sensors[i].i2c_address != 0) {
+			float temp = API0.tmp117_sensors[i].temperature_C;
 
-    // 3. 透過 USB 發送
-    // 注意: 確認 CDC_Transmit_FS 能一次發送這麼長的長度，有些實作限制 64 bytes
-    // 如果您的 USB 函式庫有自動分包功能則沒問題
-    CDC_Transmit_FS((uint8_t*)msg_buffer, offset);
+			// 加入逗號分隔
+			if (!first) {
+				offset += sprintf(msg_buffer + offset, ",");
+			}
+
+			// [修改重點] 增加 "a" (Address) 欄位
+			// 格式: {"c":通道, "a":位址, "v":溫度}
+			// c = Channel, a = Address (十進位), v = Value
+			// 網頁端收到 "a":72 會自動轉成 0x48 顯示
+			offset += sprintf(msg_buffer + offset, "{\"c\":%d,\"a\":%d,\"v\":%.2f}",
+					API0.tmp117_sensors[i].channel,      // 通道編號
+					API0.tmp117_sensors[i].i2c_address,  // [新增] I2C 位址
+					temp);                               // 溫度值
+			first = 0;
+		}
+	}
+	// 結束 "117" 陣列，並加上逗號準備接 "ltc"
+	offset += sprintf(msg_buffer + offset, "],");
+
+	// =================================================================
+	// 2. LTC2983 區塊 (使用 API0.ltc2983_devices 結構)
+	// =================================================================
+	offset += sprintf(msg_buffer + offset, "\"LTC2983\":[");
+
+	first = 1;
+
+	// 遍歷所有 LTC2983 設備 (通常 MAX_LTC2983_DEVICES 為 1)
+	for (int dev = 0; dev < MAX_LTC2983_DEVICES; dev++)
+	{
+		// 遍歷該晶片的 20 個通道 (Channel 1~20)
+		for (int ch = 0; ch < 20; ch++)
+		{
+			// [修正重點] 取得該通道的指針，方便後續判斷
+			struct ltc2983_sensor *sensor = API0.ltc2983_devices[dev].sensors[ch];
+
+			// [判斷有效性]
+			// 1. 指針不能為 NULL (基本安全檢查)
+			// 2. sensor->type 不能為 0 (這才是判斷是否有設定的關鍵！)
+			if (sensor != NULL && sensor->type != 0)
+			{
+				float ltc_val = API0.ltc2983_devices[dev].temperatures[ch];
+
+				// [過濾無效值] (可選)
+				// 您可以決定要不要顯示 -999 (Error)，如果只想顯示正常數值可保留此行
+				// 如果連錯誤代碼都想看，可以把這個 if 拿掉
+				if (ltc_val > -273.0f)
+				{
+					if (!first) offset += sprintf(msg_buffer + offset, ",");
+
+					// d: Device ID (1, 2...)
+					// c: Channel ID (1~20)
+					// v: Value
+					offset += sprintf(msg_buffer + offset, "{\"d\":%d,\"c\":%d,\"v\":%.2f}",
+							dev + 1,  // 轉成 1-base (LTC_1, LTC_2...)
+							ch + 1,   // 轉成 1-base (CH1 ~ CH20)
+							ltc_val);
+					first = 0;
+				}
+			}
+		}
+	}
+
+	// 2. JSON 結尾 + 換行符號
+	offset += sprintf(msg_buffer + offset, "]}\r\n");
+
+	// 3. 透過 USB 發送
+	// 注意: 確認 CDC_Transmit_FS 能一次發送這麼長的長度，有些實作限制 64 bytes
+	// 如果您的 USB 函式庫有自動分包功能則沒問題
+	CDC_Transmit_FS((uint8_t*)msg_buffer, offset);
 }
 
-// [新增] 單獨初始化指定通道
 // ch: 通道編號
 // addr: I2C 地址 (例如 0x48), 如果傳入 0 代表關閉該通道
 void API_ReInit_Single_Sensor(int ch, int addr)
 {
-    // 1. 安全檢查
-    if (ch < 0 || ch >= MAX_TMP117_SENSORS) return;
+	// 1. 安全檢查
+	if (ch < 0 || ch >= MAX_TMP117_SENSORS) return;
 
-    // =================================================================
-    // [關鍵修改] 檢查舊狀態
-    // 在被 TMP117_Init 覆蓋之前，先檢查這個位置原本有沒有掛載有效的感測器
-    // 假設 i2c_address 為 0 代表無效/未初始化
-    // =================================================================
-    int was_active = (API0.tmp117_sensors[ch].i2c_address != 0);
+	// =================================================================
+	// [關鍵修改] 檢查舊狀態
+	// 在被 TMP117_Init 覆蓋之前，先檢查這個位置原本有沒有掛載有效的感測器
+	// 假設 i2c_address 為 0 代表無效/未初始化
+	// =================================================================
+	int was_active = (API0.tmp117_sensors[ch].i2c_address != 0);
 
-    // 2. 初始化結構體 (這一步會覆蓋掉舊的 i2c_address)
-    TMP117_Init(&API0.tmp117_sensors[ch], &(struct tmp117_init_param){
-        .spi_idx = SPIM_FPGA,
-        .cs_idx = 0xff,
-        .channel = ch,       // 指定通道
-        .i2c_address = addr  // 指定地址
-    });
+	// 2. 初始化結構體 (這一步會覆蓋掉舊的 i2c_address)
+	TMP117_Init(&API0.tmp117_sensors[ch], &(struct tmp117_init_param){
+		.spi_idx = SPIM_FPGA,
+				.cs_idx = 0xff,
+				.channel = ch,       // 指定通道
+				.i2c_address = addr  // 指定地址
+	});
 
-    // 3. 硬體配置與計數器管理 (如果地址有效)
-    if (addr != 0) {
+	// 3. 硬體配置與計數器管理 (如果地址有效)
+	if (addr != 0) {
 
-        // =============================================================
-        // [關鍵修改] 更新總數
-        // 只有在「原本沒啟用 (was_active == 0)」且「現在啟用」時，總數才 +1
-        // 如果原本就是啟用的 (was_active == 1)，代表只是重置參數，不增加總數
-        // =============================================================
-        if (!was_active) {
-            API0.num_tmp117_sensors++;
-        }
+		// =============================================================
+		// [關鍵修改] 更新總數
+		// 只有在「原本沒啟用 (was_active == 0)」且「現在啟用」時，總數才 +1
+		// 如果原本就是啟用的 (was_active == 1)，代表只是重置參數，不增加總數
+		// =============================================================
+		if (!was_active) {
+			API0.num_tmp117_sensors++;
+		}
 
-        // 嘗試寫入設定到 FPGA
-        int ret = TMP117_ConfigureOnFPGA(&API0.tmp117_sensors[ch]);
+		// 嘗試寫入設定到 FPGA
+		int ret = TMP117_ConfigureOnFPGA(&API0.tmp117_sensors[ch]);
 
-        // (選用) 可以在這裡順便做一次讀取測試
-        // if (ret != 0 || TMP117_ReadTemperature(...) != 0) { ... }
-    }
-    else {
-        // [補充邏輯] 如果傳入 addr == 0 (要關閉這個通道)
-        // 且原本是啟用的 (was_active == 1)，則總數應該要扣除
-        if (was_active && API0.num_tmp117_sensors > 0) {
-            API0.num_tmp117_sensors--;
-        }
-    }
+		// (選用) 可以在這裡順便做一次讀取測試
+		// if (ret != 0 || TMP117_ReadTemperature(...) != 0) { ... }
+	}
+	else {
+		// [補充邏輯] 如果傳入 addr == 0 (要關閉這個通道)
+		// 且原本是啟用的 (was_active == 1)，則總數應該要扣除
+		if (was_active && API0.num_tmp117_sensors > 0) {
+			API0.num_tmp117_sensors--;
+		}
+	}
 
-    // 4. 清除該通道的舊圖表數據 (避免舊線條干擾)
-    if (_ahData[ch]) {
-        GRAPH_DATA_YT_Clear(_ahData[ch]);
-    }
+	// 4. 清除該通道的舊圖表數據 (避免舊線條干擾)
+	if (_ahData[ch]) {
+		GRAPH_DATA_YT_Clear(_ahData[ch]);
+	}
 
-    // 5. 重置過濾計數器
-    _aDataSkipCounter[ch] = 0;
+	// 5. 重置過濾計數器
+	_aDataSkipCounter[ch] = 0;
+}
+
+// [API.c] 修改後的配置套用函式
+// 增加 uint32_t data_val 參數
+void API_LTC_Apply_Config(int dev_idx, int ch_idx, int type, uint32_t config_val, uint32_t data_val)
+{
+	// 取得指向 Memory Pool 的指標
+	ltc_sensor_storage_t *storage = &g_LTC_SensorPool[dev_idx][ch_idx];
+
+	// 定義不同類型的指標別名方便操作
+	struct ltc2983_thermocouple *tc_cfg = &storage->tc;
+	struct ltc2983_diode *diode_cfg = &storage->diode;
+//	struct ltc2983_rtd *rtd_cfg = &storage->rtd;
+
+	// 1. 清空舊設定
+	memset(storage, 0, sizeof(ltc_sensor_storage_t));
+
+	// 2. 設定通用參數
+	storage->base.chan = ch_idx + 1; // 轉成 1-based 通道
+	storage->base.type = type;
+
+	// 3. 根據類型進行分配
+	switch (type)
+	{
+	// =========================================================
+	// Thermocouple (熱電偶)
+	// =========================================================
+	case LTC2983_THERMOCOUPLE_J:
+	case LTC2983_THERMOCOUPLE_K:
+	case LTC2983_THERMOCOUPLE_T:
+	case LTC2983_THERMOCOUPLE_E:
+	case LTC2983_THERMOCOUPLE_N:
+	case LTC2983_THERMOCOUPLE_R:
+	case LTC2983_THERMOCOUPLE_S:
+	case LTC2983_THERMOCOUPLE_B:
+		// [Config]: SE, OpenDetect, OC Current
+		tc_cfg->sensor_config = config_val;
+
+		// [Data]: Cold Junction Channel (從網頁傳過來的通道號)
+		// 如果網頁傳來 0，表示沒有冷接點 (通常 TC 都需要，但也許是測試用)
+		tc_cfg->cold_junction_chan = (int)data_val;
+		break;
+
+		// =========================================================
+		// Diode (二極體)
+		// =========================================================
+	case LTC2983_DIODE:
+		// [Config]: SE, 3-Reading, Average (Bit 0~2)
+		// 這裡不需要 mask，因為網頁端已經算好只送這幾位，但加了保險
+		diode_cfg->sensor_config = config_val & 0x07;
+
+		// [Data]: Excitation Current (0~3)
+		// 直接賦值即可，Driver 層會自己做 << 22
+		diode_cfg->excitation_current = data_val & 0x03;
+		break;
+
+		// =========================================================
+		// RTD (電阻測溫體)
+		// =========================================================
+//	case LTC2983_RTD_PT_100:
+//	case LTC2983_RTD_PT_1000:
+//	case LTC2983_RTD_PT_500:
+//		// [Config]: 包含 Wires, Current, Curve
+//		rtd_cfg->sensor_config = config_val;
+//
+//		// [Data]: 目前網頁 RTD 傳送的是 0，未來可以用來傳 Rsense Channel
+//		// 這裡暫時固定 Sense Resistor 在 Ch2 (或根據您的硬體修改)
+//		rtd_cfg->rtd_rsense_chan = 2;
+//		break;
+
+	default:
+		// 其他未知類型
+		tc_cfg->sensor_config = config_val;
+		break;
+	}
+}
+
+
+void API_LTC_AsyncTask(void)
+{
+	static int dev_idx = 0; // 用來記錄寫到第幾顆 IC
+
+	switch (g_LTC_State)
+	{
+	case LTC_STATE_IDLE:
+		// 沒事做，直接離開
+		break;
+
+	case LTC_STATE_RESET_START:
+		// 1. 硬體重置拉低
+		LTC298X_RESET(0);
+		g_LTC_Timer = HAL_GetTick(); // 記下現在時間
+		// 轉態：等待 10ms
+		g_LTC_State = LTC_STATE_WAIT_BOOT;
+		break;
+
+	case LTC_STATE_WAIT_BOOT:
+		// 這裡有兩個階段：
+		// A. 前 10ms 維持 Reset Low
+		// B. 之後拉高 Reset High，再等 250ms
+
+		// 檢查是否超過 10ms (Reset Pulse Width)
+		if (HAL_GetTick() - g_LTC_Timer > 10)
+		{
+			LTC298X_RESET(1); // 拉高
+		}
+
+		// 檢查是否超過 260ms (10ms Reset + 250ms Boot)
+		if (HAL_GetTick() - g_LTC_Timer > 260)
+		{
+			// 暖機完成，準備寫入
+			g_LTC_State = LTC_STATE_WRITE_CONFIG;
+		}
+		break;
+
+		/* 若需要嚴格檢查 Ready bit 可加回來，但通常延遲夠久就可以直接寫 */
+
+	case LTC_STATE_WRITE_CONFIG:
+		// 時間到了！開始把 RAM 裡的設定寫入硬體
+
+		for (int i = 0; i < API0.num_ltc2983_devices; i++)
+		{
+			ltc2983_device_manager *mgr = &API0.ltc2983_devices[i];
+
+			// 這裡我們直接用底層 SPI 寫入，不再呼叫那個會 Delay 的 init 函式
+			// 1. 寫入 Channel 設定
+			for (int ch = 0; ch < 20; ch++)
+			{
+				// 取得我們動態池裡的設定
+				ltc_sensor_storage_t *storage = &g_LTC_SensorPool[i][ch];
+
+				// 如果 Type 是 0 (Unassigned)，就不用寫，或者寫 0 覆蓋
+				// 為了加速，我們可以只寫有設定的
+				if (storage->base.type != 0)
+				{
+					uint32_t config_word = 0;
+
+					// 這裡需要把原本 build_channel_word 的邏輯搬過來
+					// 或者直接把 build_channel_word 宣告改成非 static 讓這裡呼叫
+					config_word = build_channel_word((struct ltc2983_sensor*)storage);
+
+					if (config_word != 0)
+					{
+						uint8_t buffer[4];
+						buffer[0] = (config_word >> 24) & 0xFF;
+						buffer[1] = (config_word >> 16) & 0xFF;
+						buffer[2] = (config_word >> 8) & 0xFF;
+						buffer[3] = config_word & 0xFF;
+
+					}
+				}
+			}
+		}
+
+		// 全部寫完，收工
+		g_LTC_State = LTC_STATE_IDLE;
+		// 可以在這裡顯示一行 Debug: "LTC Config Done!"
+		break;
+	}
 }

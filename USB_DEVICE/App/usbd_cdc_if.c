@@ -32,6 +32,12 @@
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
+//  main.c 裡
+extern uint8_t g_RxFIFO[];
+extern volatile uint32_t g_RxHead;
+extern volatile uint32_t g_RxTail; // 用來檢查是否滿了
+#define RX_FIFO_SIZE 1024         // 必須與 main.c 一致
+
 /* USER CODE END PV */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -261,7 +267,36 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
 	/* USER CODE BEGIN 6 */
-	API_USB_ProcessRx(Buf, *Len);
+	//	API_USB_ProcessRx(Buf, *Len);
+	//
+	//	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
+	//	USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+	//	return (USBD_OK);
+
+	// ====================================================
+	//  將收到的資料塞入 FIFO (Ring Buffer)
+	// ====================================================
+	uint32_t len = *Len;
+
+	for (uint32_t i = 0; i < len; i++)
+	{
+		// 計算下一個寫入位置
+		uint32_t next_head = (g_RxHead + 1) % RX_FIFO_SIZE;
+
+		// 檢查是否爆滿 (Head 追上 Tail)
+		if (next_head != g_RxTail)
+		{
+			g_RxFIFO[g_RxHead] = Buf[i]; // 存入資料
+			g_RxHead = next_head;        // 更新指標
+		}
+		else
+		{
+			// 緩衝區滿了，丟棄資料 (通常發生在主迴圈卡死太久)
+			break;
+		}
+	}
+
+	// 這裡不需要再設 g_USB_DataReady 旗標了，因為主迴圈只要比較 Head != Tail 就知道有資料
 
 	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
 	USBD_CDC_ReceivePacket(&hUsbDeviceFS);

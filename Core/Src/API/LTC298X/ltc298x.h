@@ -43,6 +43,45 @@
 #define LTC298X_RESULT_VALID_BIT                (1UL << 24)
 #define LTC298X_RESULT_HARD_FAULT_MASK          (0xE0000000) // Sensor, ADC, or CJ hard fault
 
+// =============================================================
+//  LTC2983 Datasheet Configuration Masks
+// =============================================================
+
+// --- Thermocouple (Table 6, Page 32) ---
+// Bit 26: Single-Ended (1=SE, 0=Differential)
+#define TC_SINGLE_ENDED         (1UL << 26)
+// Bit 23: Open Circuit Detect (1=Enable)
+#define TC_OPEN_CKT_DETECT      (1UL << 23)
+// Bits 25-24: Open Circuit Current (00=10uA, 01=100uA, 10=500uA, 11=1mA)
+#define TC_OC_CURRENT_10UA      (0UL << 24)
+#define TC_OC_CURRENT_100UA     (1UL << 24)
+
+// --- Diode (Table 8, Page 36) ---
+// Bit 26: Single-Ended (1=SE, 0=Differential)
+#define DIODE_SINGLE_ENDED      (1UL << 26)
+// Bit 25: 3-Reading Mode (1=Enable, Removes Series R errors)
+#define DIODE_3_READING         (1UL << 25)
+// Bit 24: Average (1=Enable, reduces noise)
+#define DIODE_AVERAGE           (1UL << 24)
+// Bits 23-22: Excitation Current (00=10uA, 01=20uA, 10=40uA, 11=80uA)
+// 注意：如果您的 driver struct 有獨立的 excitation_current 欄位，這部分可能不需要在 config 裡設定
+#define DIODE_CURRENT_20UA      (1UL << 22)
+
+// --- RTD (Table 13, Page 43) ---
+// Bits 21-20: Num Wires (00=2-wire, 01=3-wire, 10=4-wire, 11=4-wire Kelvin)
+#define RTD_2_WIRE              (0UL << 20)
+#define RTD_3_WIRE              (1UL << 20)
+#define RTD_4_WIRE              (2UL << 20)
+// Bits 19-18: Excitation Mode (00=No Rotation, 01=No Rotation/Sharing)
+#define RTD_NO_ROTATION         (0UL << 18)
+// Bits 17-14: Excitation Current (Example: 0010=10uA, 1000=500uA)
+// 這裡的值需要依照阻值選擇，PT100 通常選大一點的電流 (如 100uA 或 500uA)
+#define RTD_CURRENT_100UA       (0b0110UL << 14)
+#define RTD_CURRENT_500UA       (0b1000UL << 14)
+// Bits 13-12: Curve (00=European, 01=American, 10=Japanese, 11=ITS-90)
+#define RTD_CURVE_EUROPEAN      (0UL << 12)
+
+
 /******************************************************************************/
 /*************************** TYPE DEFINITIONS *********************************/
 /******************************************************************************/
@@ -218,4 +257,6 @@ int LTC2986_TestReadWrite(ltc298x_dev *device);
  * - -4: 測試失敗 (讀回的資料與寫入的資料不符)。
  */
 int LTC2986_TestMultiReadWrite(ltc298x_dev *device);
+int32_t ltc298x_spi_rw(ltc298x_dev *dev, uint8_t cmd, uint16_t addr, uint8_t *data, uint16_t len);
+
 #endif // __LTC298X_H__

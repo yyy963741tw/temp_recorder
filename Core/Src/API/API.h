@@ -41,6 +41,30 @@ extern "C" {
 #define Y_MIN_TEMP  99.0f
 #define Y_MAX_TEMP  -99.9f
 
+typedef enum {
+    LTC_STATE_IDLE,         // 沒事做
+    LTC_STATE_RESET_START,  //剛收到指令，準備拉低 Reset
+    LTC_STATE_WAIT_BOOT,    // Reset 拉高了，正在等 250ms 暖機
+    LTC_STATE_CHECK_READY,  // 檢查 Status Ready
+    LTC_STATE_WRITE_CONFIG  // 開始寫入 SPI
+} LTC_Init_State_t;
+
+extern LTC_Init_State_t g_LTC_State;
+
+// 定義儲存結構 (讓 API.c 的 g_LTC_SensorPool 知道這是什麼)
+typedef union {
+    struct ltc2983_sensor       base;
+    struct ltc2983_thermocouple tc;
+    struct ltc2983_diode        diode;
+//    struct ltc2983_rtd          rtd;
+} ltc_sensor_storage_t;
+
+// 宣告全域變數 (讓其他檔案也能用)
+extern ltc_sensor_storage_t g_LTC_SensorPool[MAX_LTC2983_DEVICES][20];
+extern ltc298x_dev g_LTC_Devices[MAX_LTC2983_DEVICES];
+extern struct ltc298x_init_param g_LTC_InitParams[MAX_LTC2983_DEVICES];
+
+
 
 typedef struct {
 	// --- TMP117 感測器管理 ---
@@ -87,7 +111,7 @@ void API_RunLineChartLogic(void);
 void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len);
 void API_USB_SendTelemetry(void);
 void API_ReInit_Single_Sensor(int ch, int addr);
-
+void API_LTC_Apply_Config(int dev_idx, int ch_idx, int type, uint32_t config_val, uint32_t data_val);
 
 extern GRAPH_DATA_Handle  _ahData[MAX_TMP117_SENSORS];   // *** 修改：改為資料控制代碼的陣列 ***
 //extern GRAPH_DATA_Handle  _ahData_LTC2983[20];   // *** for_LTC2983_0  ***
