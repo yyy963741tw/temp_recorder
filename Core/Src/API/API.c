@@ -131,60 +131,60 @@ ltc_sensor_storage_t g_LTC_SensorPool[MAX_LTC2983_DEVICES][20];
 // [修正版] 系統啟動時呼叫，連結所有指標與參數
 static int API_LTC_Hardware_Map()
 {
-    // 1. 設定總數
-    API0.num_ltc2983_devices = 2;
+	// 1. 設定總數
+	API0.num_ltc2983_devices = 2;
 
-    // 2. 清空記憶體
-    memset(&API0.ltc2983_devices, 0, sizeof(API0.ltc2983_devices));
-    memset(g_LTC_SensorPool, 0, sizeof(g_LTC_SensorPool));
+	// 2. 清空記憶體
+	memset(&API0.ltc2983_devices, 0, sizeof(API0.ltc2983_devices));
+	memset(g_LTC_SensorPool, 0, sizeof(g_LTC_SensorPool));
 
-    // 清空 g_LTC 相關全域變數
-    memset(g_LTC_Devices, 0, sizeof(g_LTC_Devices));
-    memset(g_LTC_InitParams, 0, sizeof(g_LTC_InitParams));
+	// 清空 g_LTC 相關全域變數
+	memset(g_LTC_Devices, 0, sizeof(g_LTC_Devices));
+	memset(g_LTC_InitParams, 0, sizeof(g_LTC_InitParams));
 
-    // ==========================================
-    // 設定迴圈
-    // ==========================================
-    for (int i = 0; i < MAX_LTC2983_DEVICES; i++)
-    {
-        // --- A. 設定 SPI/CS 硬體參數 ---
-        int spi_index = 0;
-        int cs_index  = 0;
+	// ==========================================
+	// 設定迴圈
+	// ==========================================
+	for (int i = 0; i < MAX_LTC2983_DEVICES; i++)
+	{
+		// --- A. 設定 SPI/CS 硬體參數 ---
+		int spi_index = 0;
+		int cs_index  = 0;
 
-        if (i == 0) {
-            spi_index = SPIM_LTC2983_1; // Device 1
-            cs_index  = 1;
-        } else if (i == 1) {
-            // spi_index = SPIM_LTC2983_2; // Device 2
-            // cs_index  = 2;
-        }
+		if (i == 0) {
+			spi_index = SPIM_LTC2983_1; // Device 1
+			cs_index  = 1;
+		} else if (i == 1) {
+			// spi_index = SPIM_LTC2983_2; // Device 2
+			// cs_index  = 2;
+		}
 
-        // --- B. 設定 API0 (建立指標陣列) ---
-        ltc2983_device_manager *mgr = &API0.ltc2983_devices[i];
-        mgr->dev_instance.spi_idx = spi_index;
-        mgr->dev_instance.cs_idx  = cs_index;
+		// --- B. 設定 API0 (建立指標陣列) ---
+		ltc2983_device_manager *mgr = &API0.ltc2983_devices[i];
+		mgr->dev_instance.spi_idx = spi_index;
+		mgr->dev_instance.cs_idx  = cs_index;
 
-        // [關鍵步驟 1] 這裡您正確地建立了一個「指標陣列」
-        // mgr->sensors 是一個陣列，裡面存放指向 SensorPool 的「指標」
-        for (int ch = 0; ch < 20; ch++) {
-            mgr->sensors[ch] = (struct ltc2983_sensor *)&g_LTC_SensorPool[i][ch];
-        }
+		// [關鍵步驟 1] 這裡您正確地建立了一個「指標陣列」
+		// mgr->sensors 是一個陣列，裡面存放指向 SensorPool 的「指標」
+		for (int ch = 0; ch < 20; ch++) {
+			mgr->sensors[ch] = (struct ltc2983_sensor *)&g_LTC_SensorPool[i][ch];
+		}
 
-        // --- C. 設定 g_LTC (給 USB Init 用) ---
-        g_LTC_Devices[i].spi_idx = spi_index;
-        g_LTC_Devices[i].cs_idx  = cs_index;
+		// --- C. 設定 g_LTC (給 USB Init 用) ---
+		g_LTC_Devices[i].spi_idx = spi_index;
+		g_LTC_Devices[i].cs_idx  = cs_index;
 
-        g_LTC_InitParams[i].dev_id  = ID_LTC2983;
-        g_LTC_InitParams[i].spi_idx = spi_index;
-        g_LTC_InitParams[i].cs_idx  = cs_index;
+		g_LTC_InitParams[i].dev_id  = ID_LTC2983;
+		g_LTC_InitParams[i].spi_idx = spi_index;
+		g_LTC_InitParams[i].cs_idx  = cs_index;
 
-        // ⭐⭐⭐ [最重要修正] ⭐⭐⭐
-        // 不要直接轉型 SensorPool (會當機！)
-        // 而是要指向我們剛剛建立好的「指標陣列」 (mgr->sensors)
-        g_LTC_InitParams[i].sensors = mgr->sensors;
-    }
+		// ⭐⭐⭐ [最重要修正] ⭐⭐⭐
+		// 不要直接轉型 SensorPool (會當機！)
+		// 而是要指向我們剛剛建立好的「指標陣列」 (mgr->sensors)
+		g_LTC_InitParams[i].sensors = mgr->sensors;
+	}
 
-    return 0;
+	return 0;
 }
 
 // 初始化所有 LTC2983 設備的輔助函式
@@ -326,6 +326,10 @@ int API_Init(){
 
 	SG_ECP5_Init(SPIM_FPGA);
 
+	// [新增] 確保 LTC2983 離開重置狀態 (Pull High)
+	// 這一行非常重要！否則 LTC 會一直處於 Reset，可能干擾 FPGA 或 SPI
+	LTC298X_RESET(1);
+	HAL_Delay(200);   // 給它一點時間暖機 (LTC2983 啟動需要約 200ms)
 
 
 	/* Initialize all sensors and check return status */
@@ -1319,8 +1323,11 @@ void API_USB_ProcessRx(uint8_t* Buf, uint32_t Len)
 
 								GUI_DispStringAt("LTC Updating...", 10, 200);
 								GUI_DispStringAt(dbg, 10, 220);
+								// 原本的寫法 (有問題)
+								// ltc298x_init(&g_LTC_Devices[dev_idx], &g_LTC_InitParams[dev_idx]);
 
-								ltc298x_init(&g_LTC_Devices[dev_idx], &g_LTC_InitParams[dev_idx]);
+								// 建議的寫法 (指向 API0 結構中的 instance)
+								ltc298x_init(&API0.ltc2983_devices[dev_idx].dev_instance, &g_LTC_InitParams[dev_idx]);
 							}
 						}
 						else
@@ -1464,7 +1471,8 @@ void API_USB_SendTelemetry(void)
 				// [過濾無效值] (可選)
 				// 您可以決定要不要顯示 -999 (Error)，如果只想顯示正常數值可保留此行
 				// 如果連錯誤代碼都想看，可以把這個 if 拿掉
-				if (ltc_val > -273.0f)
+//				if (ltc_val > -273.0f)
+				if (1)
 				{
 					if (!first) offset += sprintf(msg_buffer + offset, ",");
 
@@ -1557,10 +1565,13 @@ void API_LTC_Apply_Config(int dev_idx, int ch_idx, int type, uint32_t config_val
 	// 定義不同類型的指標別名方便操作
 	struct ltc2983_thermocouple *tc_cfg = &storage->tc;
 	struct ltc2983_diode *diode_cfg = &storage->diode;
-//	struct ltc2983_rtd *rtd_cfg = &storage->rtd;
+	//	struct ltc2983_rtd *rtd_cfg = &storage->rtd;
+
 
 	// 1. 清空舊設定
 	memset(storage, 0, sizeof(ltc_sensor_storage_t));
+
+	API0.ltc2983_devices[dev_idx].temperatures[ch_idx] = -999.0f;
 
 	// 2. 設定通用參數
 	storage->base.chan = ch_idx + 1; // 轉成 1-based 通道
@@ -1586,6 +1597,7 @@ void API_LTC_Apply_Config(int dev_idx, int ch_idx, int type, uint32_t config_val
 		// [Data]: Cold Junction Channel (從網頁傳過來的通道號)
 		// 如果網頁傳來 0，表示沒有冷接點 (通常 TC 都需要，但也許是測試用)
 		tc_cfg->cold_junction_chan = (int)data_val;
+
 		break;
 
 		// =========================================================
@@ -1599,21 +1611,29 @@ void API_LTC_Apply_Config(int dev_idx, int ch_idx, int type, uint32_t config_val
 		// [Data]: Excitation Current (0~3)
 		// 直接賦值即可，Driver 層會自己做 << 22
 		diode_cfg->excitation_current = data_val & 0x03;
+
+		//		// [Config]: SE, 3-Reading, Average (Bit 0~2)
+		//		// 這裡不需要 mask，因為網頁端已經算好只送這幾位，但加了保險
+		//		diode_cfg->sensor_config = 0x05;
+		//
+		//		// [Data]: Excitation Current (0~3)
+		//		// 直接賦值即可，Driver 層會自己做 << 22
+		//		diode_cfg->excitation_current = 0x05;
 		break;
 
 		// =========================================================
 		// RTD (電阻測溫體)
 		// =========================================================
-//	case LTC2983_RTD_PT_100:
-//	case LTC2983_RTD_PT_1000:
-//	case LTC2983_RTD_PT_500:
-//		// [Config]: 包含 Wires, Current, Curve
-//		rtd_cfg->sensor_config = config_val;
-//
-//		// [Data]: 目前網頁 RTD 傳送的是 0，未來可以用來傳 Rsense Channel
-//		// 這裡暫時固定 Sense Resistor 在 Ch2 (或根據您的硬體修改)
-//		rtd_cfg->rtd_rsense_chan = 2;
-//		break;
+		//	case LTC2983_RTD_PT_100:
+		//	case LTC2983_RTD_PT_1000:
+		//	case LTC2983_RTD_PT_500:
+		//		// [Config]: 包含 Wires, Current, Curve
+		//		rtd_cfg->sensor_config = config_val;
+		//
+		//		// [Data]: 目前網頁 RTD 傳送的是 0，未來可以用來傳 Rsense Channel
+		//		// 這裡暫時固定 Sense Resistor 在 Ch2 (或根據您的硬體修改)
+		//		rtd_cfg->rtd_rsense_chan = 2;
+		//		break;
 
 	default:
 		// 其他未知類型
