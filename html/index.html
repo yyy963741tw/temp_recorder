@@ -1,0 +1,2994 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>STM32 溫度監控儀表板 V52 (Fixed Address Logic)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-body: #f4f6f9;
+            --bg-container: #ffffff;
+            --bg-control: #f8f9fa;
+            --border-color: #e9ecef;
+            --text-main: #212529;
+            --text-sub: #6c757d;
+            --header-bg: #f1f3f5;
+            --header-hover: #e9ecef;
+            --box-shadow: rgba(0,0,0,0.1);
+            --error-bg: #f8d7da;
+            --error-text: #721c24;
+            --error-border: #f5c6cb;
+        }
+        
+        body.dark-mode {
+            --bg-body: #121212;
+            --bg-container: #1e1e1e;
+            --bg-control: #2d2d2d;
+            --border-color: #444;
+            --text-main: #e0e0e0;
+            --text-sub: #a0a0a0;
+            --header-bg: #333;
+            --header-hover: #444;
+            --box-shadow: rgba(0,0,0,0.5);
+            --error-bg: #441c1f;
+            --error-text: #ea868f;
+            --error-border: #6a2a30;
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-body); color: var(--text-main); padding: 20px; transition: background 0.3s, color 0.3s; }
+        .container { max-width: 98%; margin: 0 auto; background: var(--bg-container); padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px var(--box-shadow); }
+        
+        /* Header Layout */
+        .header { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color); padding-bottom: 15px; }
+        .header-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: stretch; }
+
+        .control-group { display: flex; gap: 10px; align-items: center; background: var(--bg-control); padding: 8px 15px; border-radius: 8px; border: 1px solid var(--border-color); }
+        .control-group h3 { margin: 0 10px 0 0; font-size: 15px; color: var(--text-main); white-space: nowrap; }
+        
+        button { padding: 6px 12px; font-size: 14px; cursor: pointer; border: none; border-radius: 6px; transition: 0.2s; font-weight: bold; white-space: nowrap;}
+        button:disabled { background: #e0e0e0; color: #999; cursor: not-allowed; }
+        .dark-mode button:disabled { background: #444; color: #777; }
+        
+        .btn-connect { background: #007bff; color: white; }
+        .btn-disconnect { background: #dc3545; color: white; }
+        .btn-clear { background: #6c757d; color: white; }
+        .btn-config { background: #17a2b8; color: white; } 
+        .btn-add { background: #28a745; color: white; font-size: 16px; padding: 4px 12px; }
+        .btn-remove { background: #dc3545; color: white; padding: 4px 8px; font-size: 12px; }
+        .btn-set-all { background: #6610f2; color: white; }
+        .btn-disable-all { background: #dc3545; color: white; } 
+        .btn-update { background: #17a2b8; color: white; padding: 4px 8px; font-size: 13px;}
+
+        /* Input & Select Styling */
+        input[type="number"] { width: 60px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; background: var(--bg-container); color: var(--text-main); }
+        select { padding: 5px; border: 1px solid #ccc; border-radius: 4px; background: var(--bg-container); color: var(--text-main); cursor: pointer; }
+        
+        input[type="checkbox"] { transform: scale(1.2); margin-right: 5px; cursor: pointer; }
+        label { cursor: pointer; user-select: none; font-weight: 500; display: flex; align-items: center; white-space: nowrap; }
+        
+        /* Config Section Styles */
+        .config-section { background-color: var(--bg-control); border: 1px solid #ddd; flex-direction: column; align-items: flex-start; padding: 0; overflow: hidden; margin-bottom: 10px; border-radius: 8px;}
+        .dark-mode .config-section { border-color: #444; }
+
+        .config-header { 
+            width: 100%; padding: 8px 15px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; 
+            transition: background 0.2s; box-sizing: border-box;
+        }
+        .config-header:hover { background: rgba(0,0,0, 0.05); }
+        .dark-mode .config-header:hover { background: rgba(255,255,255, 0.05); }
+        
+        .config-header h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 15px;}
+
+        /* Specific colors */
+        .section-tmp117 { border-color: #17a2b8; }
+        .section-tmp117 .config-header { background: rgba(23, 162, 184, 0.1); }
+        .section-tmp117 h3 { color: #17a2b8; }
+        .section-tmp117 .config-toolbar { border-bottom: 1px solid #17a2b8; }
+		
+		.section-ltc2983 { border-color: #fd7e14; }
+        .section-ltc2983 .config-header { background: rgba(253, 126, 20, 0.1); }
+        .section-ltc2983 h3 { color: #fd7e14; }
+        .section-ltc2983 .config-toolbar { border-bottom: 1px solid #fd7e14; }
+
+        .section-anomaly { border-color: #dc3545; }
+        .section-anomaly .config-header { background: rgba(220, 53, 69, 0.1); }
+        .section-anomaly h3 { color: #dc3545; }
+        .section-anomaly .config-toolbar { border-bottom: 1px solid #dc3545; }
+
+        .config-toolbar {
+            width: 100%; padding: 10px 15px; 
+            background: var(--bg-container); 
+            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+            box-sizing: border-box; 
+        }
+        
+		/* [新增] 檔案存取工具列專用樣式 */
+		.file-action-group {
+			display: flex; 
+			align-items: center; 
+			gap: 8px; 
+			padding-left: 15px; 
+			margin-left: 15px; 
+			border-left: 2px solid var(--border-color); /* 使用變數讓深色模式也好看 */
+			height: 30px; /* 固定高度讓分隔線整齊 */
+		}
+		
+		/* 檔案操作按鈕共用樣式 */
+		.btn-file {
+			display: inline-flex;
+			align-items: center;
+			gap: 5px;
+			padding: 5px 12px;
+			font-size: 13px;
+			font-weight: 600;
+			border: none;
+			border-radius: 4px;
+			cursor: pointer;
+			transition: background 0.2s, transform 0.1s;
+			color: white;
+			box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+		}
+		
+		.btn-file:hover {
+			transform: translateY(-1px);
+			box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+		}
+		
+		.btn-file:active {
+			transform: translateY(0);
+		}
+		
+		.btn-file svg {
+			width: 14px;
+			height: 14px;
+			fill: currentColor;
+		}
+		
+		/* 個別顏色定義 */
+		.btn-export { background-color: #17a2b8; }
+		.btn-export:hover { background-color: #138496; }
+		
+		.btn-import { background-color: #28a745; }
+		.btn-import:hover { background-color: #218838; }
+		
+        .config-content { 
+            display: none; padding: 10px 15px; width: 100%; 
+            background: var(--bg-control); 
+            animation: slideDown 0.3s ease-out; box-sizing: border-box;
+        }
+        .config-content.show { display: block; }
+
+        .toggle-arrow { transition: transform 0.3s; font-size: 12px; }
+        
+        #configRowsContainer, #anomalyRowsContainer { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+        .config-row { display: flex; align-items: center; gap: 8px; background: var(--bg-container); padding: 5px; border-radius: 4px; border: 1px solid var(--border-color); animation: fadeIn 0.3s; }
+        
+        /* Chart Layout */
+        .charts-area { display: flex; gap: 20px; flex-wrap: nowrap; align-items: flex-start; overflow-x: auto; margin-bottom: 20px; }
+        
+        .chart-box { 
+            background: var(--bg-container); 
+            border: 1px solid var(--border-color); 
+            border-radius: 8px; 
+            padding: 15px; 
+            transition: all 0.3s ease; 
+            min-width: 0; 
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-chart { flex: 3; }
+        .side-chart { flex: 1; }
+        .full-width { width: 100%; margin-top: 20px; }
+
+        .chart-box.collapsed { flex: 0 0 auto; width: auto; }
+        .chart-box.collapsed .box-content { display: none; }
+        .chart-box.collapsed .box-header { margin-bottom: 0; white-space: nowrap; }
+
+        .box-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: var(--header-bg); padding: 10px; border-radius: 5px; margin-bottom: 10px; white-space: nowrap; }
+        .box-header:hover { background: var(--header-hover); }
+        .box-title { font-weight: bold; margin: 0; }
+        .toggle-icon { font-size: 12px; transition: transform 0.2s; }
+        .collapsed .toggle-icon { transform: rotate(-90deg); }
+
+        .chart-wrapper { position: relative; height: 450px; width: 100%; } 
+
+        .scroll-container { margin-top: 10px; display: flex; align-items: center; gap: 10px; color: var(--text-main); }
+        input[type=range] { flex-grow: 1; cursor: pointer; }
+        .scroll-info { font-size: 12px; color: var(--text-sub); min-width: 120px; text-align: right; font-family: monospace; }
+
+        .color-inputs-container { display: flex; gap: 15px; flex-wrap: wrap; padding: 5px; }
+        .color-item { display: flex; align-items: center; gap: 8px; background: var(--bg-control); padding: 5px 10px; border-radius: 20px; border: 1px solid var(--border-color); }
+        .color-item label { font-weight: bold; font-family: monospace; cursor: pointer; margin: 0; }
+        .color-item input[type="color"] { border: none; width: 30px; height: 30px; padding: 0; background: none; cursor: pointer; border-radius: 50%; overflow: hidden; }
+
+        .status-badge { padding: 5px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; margin-left: 10px; white-space: nowrap; }
+        .status-disconnected { background: #ffeeba; color: #856404; }
+        .status-connected { background: #d4edda; color: #155724; }
+
+        #errorBanner {
+            display: none;
+            width: 100%;
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: var(--error-bg);
+            color: var(--error-text);
+            border: 1px solid var(--error-border);
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+		
+		/* ========================================= */
+        /* [新增] 下拉選單 Disabled 選項樣式優化 */
+        /* ========================================= */
+        select option:disabled {
+            color: var(--text-sub);        /* 使用副標題顏色 (在暗黑模式下是深灰，亮色模式是淺灰) */
+            background-color: var(--bg-control); /* 背景跟隨控制項背景，不會變白 */
+            font-style: italic;            /* 用斜體區分 */
+            opacity: 0.5;                  /* 增加透明度 */
+        }
+
+        /* 針對 Chrome/Edge 的強制暗色覆蓋 (瀏覽器有時會頑固地用白色背景) */
+        body.dark-mode select option:disabled {
+            color: #777;                   /* 暗黑模式下的文字顏色 */
+            background-color: #2d2d2d;     /* 暗黑模式下的背景顏色 */
+        }
+		/* [新增] 進階參數區塊樣式 */
+		.params-container {
+			display: flex; 
+			gap: 15px; /* 每個選項之間的間距 */
+			align-items: center; 
+			background: var(--bg-control); /* 使用變數背景色 */
+			padding: 4px 8px; 
+			border-radius: 4px; 
+			border: 1px solid var(--border-color);
+		}
+		
+		/* 參數標籤樣式 (對齊用) */
+		.param-label {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			font-size: 13px;
+			font-weight: 500;
+			cursor: pointer;
+			white-space: nowrap; /* 防止文字換行 */
+		}
+		
+		/* Hex 數值顯示區 */
+		.hex-preview {
+			font-family: 'Consolas', 'Courier New', monospace;
+			background-color: #222; /* 改深一點的底色 */
+			border: 1px solid #444;
+			color: #00ff00;
+			padding: 4px 8px;       /* 增加一點內距 */
+			border-radius: 4px;
+			font-size: 11px;        /* 字體稍微縮小一點以容納更多資訊 */
+			line-height: 1.4;       /* 增加行高 */
+			min-width: 140px;       /* 加寬 */
+			text-align: left;       /* 改為靠左對齊 */
+			display: inline-block;
+			vertical-align: middle;
+		}
+		
+		/* 讓裡面的標籤有顏色區分 */
+		.hex-label {
+			color: #888;
+			font-weight: normal;
+			margin-right: 4px;
+		}
+		
+		
+    </style>
+</head>
+<body class="">
+
+<div class="container">
+    <div class="header">
+        
+        <div class="header-row">
+            
+            <div class="control-group">
+                <h3>🔌 連線</h3>
+                <button id="connectBtn" class="btn-connect">連接</button>
+                <button id="disconnectBtn" class="btn-disconnect" disabled>斷開</button>
+                <span id="status" class="status-badge status-disconnected">未連線</span>
+            </div>
+
+            <div class="control-group">
+                <h3>🛠️ 操作</h3>
+                <button class="btn-clear" onclick="clearCharts()">🧹 清除</button>
+                <label style="margin-left: 10px; cursor: pointer;">
+                    <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()" checked> 暗黑
+                </label>
+                
+                <div style="margin-left: 15px; padding-left: 15px; border-left: 1px solid #ccc; display:flex; gap:5px; align-items:center;">
+                    <label title="STM32 數據回傳間隔">Freq:</label>
+                    <input type="number" id="cfg_interval" value="1000" min="10" step="100" style="width:60px;">
+                    <span style="font-size:12px; color:var(--text-sub);">ms</span>
+                    <button class="btn-update" onclick="updateTxInterval()">Set</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="header-row">
+            <div class="control-group" style="width: 100%; border-left: 4px solid #17a2b8;">
+                <h3 style="color: #17a2b8;">💾 讀寫 (Data I/O)</h3>
+                
+                <div class="file-action-group" style="margin-left: 0; padding-left: 0; border-left: none; margin-right: 20px;">
+                    <span style="font-size: 12px; font-weight: bold; color: var(--text-sub); margin-right: 2px;">CONFIG:</span>
+                    <button onclick="exportSettings()" class="btn-file btn-export" title="下載完整設定檔 (.json)">
+                        <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                        匯出
+                    </button>
+                    <button onclick="triggerImport()" class="btn-file btn-import" title="讀取設定檔 (.json)">
+                        <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>
+                        匯入
+                    </button>
+                    <input type="file" id="importFile" style="display: none" onchange="importSettings(this)">
+                </div>
+
+                <div style="height: 24px; width: 1px; background: #ddd; margin-right: 20px;"></div>
+
+                <div style="display: flex; align-items: center;">
+                    <label title="每收集 N 筆資料自動存檔" style="font-weight:bold; color:#28a745; margin-right: 5px;">Auto Save:</label>
+                    <input type="number" id="cfg_auto_save_count" value="1000" min="10" step="10" style="width:55px; margin-right: 10px;" onchange="saveAutoSaveSettings()">
+                    
+                    <label title="存成 Excel 表格" style="margin-right: 10px; cursor: pointer; display: flex; align-items: center;">
+                        <input type="checkbox" id="cfg_auto_csv_enable" onchange="saveAutoSaveSettings()" style="margin-right: 3px;">
+                        <span style="font-weight:bold;">CSV</span>
+                    </label>
+
+                    <label title="存成歷史趨勢圖 (PNG)" style="margin-right: 15px; cursor: pointer; display: flex; align-items: center;">
+                        <input type="checkbox" id="cfg_auto_img_enable" onchange="saveAutoSaveSettings()" style="margin-right: 3px;">
+                        <span style="font-weight:bold;">IMG</span>
+                    </label>
+
+                    <button id="btn_select_folder" onclick="selectLogFolder()" class="btn-file" style="background-color: #f8f9fa; color: #333; border: 1px solid #ced4da; margin-right: 10px;">
+                        📂 目錄
+                    </button>
+
+                    <span id="save_progress" style="font-size: 12px; color: #666; font-family: monospace; font-weight: bold; min-width: 60px;">(0/1000)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="header-row">
+            <div class="control-group" style="width: 100%;">
+                <h3>⚙️ 顯示</h3>
+                
+                <label style="margin-right: 15px;">
+                    <input type="checkbox" id="autoScale" checked onchange="toggleManualInput()"> 自動縮放
+                </label>
+                
+                <label style="margin-right: 15px; color: #007bff; font-weight:bold;">
+                    <input type="checkbox" id="showAddrToggle" onchange="forceUpdateChart()"> 顯示位址
+                </label>
+
+                <div style="padding-left: 15px; border-left: 1px solid #ccc; display:flex; gap:5px; align-items:center; margin-right: 15px;">
+                    <label title="總儲存筆數">Store:</label>
+                    <input type="number" id="cfg_max_points" value="2000" min="100" max="10000" style="width:55px;">
+                    
+                    <label title="視窗顯示筆數">View:</label>
+                    <input type="number" id="cfg_window_size" value="50" min="10" max="1000" style="width:45px;">
+                    
+                    <button class="btn-update" onclick="updateBufferSettings()">Set</button>
+                </div>
+
+                <div id="manualInput" style="display:none; padding-left: 10px; border-left: 1px solid #ccc;">
+                    <input type="number" id="yMin" value="20" placeholder="Min" style="width:45px;"> ~ 
+                    <input type="number" id="yMax" value="40" placeholder="Max" style="width:45px;">
+                    <button onclick="forceUpdateChart()" style="padding: 4px 6px;">Update</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+        <div class="control-group config-section section-tmp117">
+            <div class="config-header" onclick="toggleConfigSection('configContent', 'configToggleIcon')">
+                <h3>
+                    <span>🔧 TMP117 多通道配置</span>
+                    <span id="configToggleIcon" class="toggle-arrow">▼</span>
+                </h3>
+                <span style="font-size: 12px; color: #666;">(點擊展開/收合)</span>
+            </div>
+
+
+		
+		<div class="config-toolbar">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn-add" onclick="addConfigRow()" title="增加一列配置">+</button>
+                    <button class="btn-set-all" id="btn_set_all" onclick="setAllRows()" disabled title="依序發送所有配置">🚀 Set All</button>
+                    <button class="btn-disable-all" id="btn_disable_all" onclick="disableAllChannels()" disabled title="關閉所有已開啟的通道">🛑 Disable All</button>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 5px; padding: 0 10px; border-left: 2px solid #ddd; margin-left: 5px;">
+                    <span style="font-size: 13px; font-weight: bold; color: #17a2b8;">統一 Addr:</span>
+                    <select id="batchAddrSelect" style="padding: 2px; font-size: 13px;">
+                        <option value="72">0x48</option>
+                        <option value="73">0x49</option>
+                        <option value="74">0x4A</option>
+                        <option value="75">0x4B</option>
+                        <option value="0" style="color:red;">OFF</option>
+                    </select>
+                    <button class="btn-update" onclick="applyBatchAddr()" title="將此位址套用到下方所有列" style="background-color: #6c757d; color: white; border: none; padding: 2px 8px; cursor: pointer;">Apply</button>
+                </div>
+                <div style="display: flex; gap: 15px; align-items: center; margin-left: 10px;">
+                    <label style="font-size:13px; color:#555;">
+                        <input type="checkbox" id="skipDisableConfirm" checked>跳過確認
+                    </label>
+					<label style="font-size:13px; color:#dc3545; font-weight:bold;">
+						<input type="checkbox" id="clearDataOnDisable" checked> 關閉時清除數據
+					</label>
+                </div>
+            </div>
+            <div id="configContent" class="config-content">
+                <div id="configRowsContainer"></div>
+            </div>
+        </div>
+		
+		<div class="control-group config-section section-ltc2983">
+            <div class="config-header" onclick="toggleConfigSection('ltcConfigContent', 'ltcConfigToggleIcon')">
+                <h3>
+                    <span>🔥 LTC2983 多通道配置</span>
+                    <span id="ltcConfigToggleIcon" class="toggle-arrow">▼</span>
+                </h3>
+                <span style="font-size: 12px; color: #666;">(點擊展開/收合)</span>
+            </div>
+
+            <div class="config-toolbar">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn-add" onclick="addLTCConfigRow()" title="增加一列配置" style="background:#fd7e14;">+</button>
+                    <button id="btn_set_all_ltc" class="btn-set-all" onclick="setAllLTCRows()" title="依序發送所有 LTC 配置" style="background:#d63384;" disabled>🚀 Set All LTC</button>
+                    <button id="btn_disable_all_ltc" class="btn-disable-all" onclick="disableAllLTCChannels()" title="關閉所有 LTC 通道" style="background:#dc3545;" disabled>🛑 Disable All</button>
+				</div>
+				
+                <div style="display: flex; align-items: center; gap: 5px; padding: 0 10px; border-left: 2px solid #ddd; margin-left: 5px;">
+                    <span style="font-size: 13px; font-weight: bold; color: #fd7e14;">統一 Type:</span>
+                    <select id="batchLtcTypeSelect" style="padding: 2px; font-size: 13px;">
+                        <option value="0">NONE (Off)</option>
+                        <option value="1">Type J</option>
+                        <option value="2">Type K</option>
+                        <option value="3">Type T</option>
+                        <option value="4">Type E</option>
+                    </select>
+                    <button class="btn-update" onclick="applyBatchLTCType()" style="background-color: #6c757d; color: white; border: none; padding: 2px 8px; cursor: pointer;">Apply</button>
+                </div>
+
+                <div style="display: flex; gap: 15px; align-items: center; margin-left: 10px;">
+                    <label style="font-size:13px; color:#555;">
+                        <input type="checkbox" id="skipDisableConfirmLTC" checked>跳過確認
+                    </label>
+                    <label style="font-size:13px; color:#dc3545; font-weight:bold;">
+                        <input type="checkbox" id="clearDataOnDisableLTC" checked> 關閉時清除數據
+                    </label>
+                </div>
+            </div>
+
+            <div id="ltcConfigContent" class="config-content">
+                <div id="ltcConfigRowsContainer"></div>
+            </div>
+        </div>
+		
+        <div class="control-group config-section section-anomaly">
+            <div class="config-header" onclick="toggleConfigSection('anomalyContent', 'anomalyToggleIcon')">
+                <h3>
+                    <span>🚨 異常偵測設定 (Anomaly Rules)</span>
+                    <span id="anomalyToggleIcon" class="toggle-arrow">▼</span>
+                </h3>
+                <span style="font-size: 12px; color: #666;">(點擊展開/收合)</span>
+            </div>
+
+            <div class="config-toolbar">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn-add" onclick="addAnomalyRow()" title="增加一條規則">+</button>
+                </div>
+                
+                <label style="font-size:13px; color:#dc3545; font-weight:bold;" title="若勾選，符合異常規則的通道將從圖表(折線圖與長條圖)中隱藏">
+                    <input type="checkbox" id="filterAnomalies" checked onchange="saveAnomalyRules(); forceUpdateChart();"> 從圖表隱藏異常通道 (Auto-Hide Anomalies)
+                </label>
+            </div>
+
+            <div id="anomalyContent" class="config-content">
+				<div style="padding: 8px; margin-bottom: 10px; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px; display: flex; align-items: center; gap: 10px;">
+					<span style="font-size: 20px;">⚠️</span>
+					<label style="font-weight: bold; color: #856404;">
+						連續相同數值 (Stuck) 判定斷線次數:
+					</label>
+					<input type="number" id="stuckThresholdInput" value="5" min="1" style="width: 60px; text-align: center; font-weight: bold;">
+					<span style="font-size: 12px; color: #856404;">(預設 5 次, 即約 0.5~1 秒)</span>
+					</div>
+                <div id="anomalyRowsContainer"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="errorBanner" style="display: none;">
+        <span style="font-size: 20px; margin-right: 10px;">⚠️</span>
+        <span id="errorMessage">偵測到異常:</span>
+    </div>
+    
+    <div class="charts-area">
+        <div class="chart-box main-chart" id="historyBox">
+            <div class="box-header" onclick="toggleBox('historyBox')">
+                <p class="box-title">📉 歷史溫度趨勢</p>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="box-content">
+                <div class="chart-wrapper">
+                    <canvas id="historyChart"></canvas>
+                </div>
+                <div class="scroll-container">
+                    <span style="font-size:12px;">回放:</span>
+                    <input type="range" id="historyScroll" min="0" max="0" value="0" step="1" oninput="onScrollChange()" disabled>
+                    <span id="scrollInfo" class="scroll-info">Buffering...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chart-box side-chart" id="barBox">
+            <div class="box-header" onclick="toggleBox('barBox')">
+                <p class="box-title">📊 即時值</p>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="box-content">
+                <div class="chart-wrapper">
+                    <canvas id="currentBarChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- <div class="chart-box full-width" id="colorSettingsBox"> -->
+        <!-- <div class="box-header" onclick="toggleBox('colorSettingsBox')"> -->
+            <!-- <p class="box-title">🎨 通道顏色設定 (Channel Colors)</p> -->
+            <!-- <span class="toggle-icon">▼</span> -->
+        <!-- </div> -->
+        <!-- <div class="box-content"> -->
+            <!-- <div id="colorInputsContainer" class="color-inputs-container"> -->
+                <!-- <span style="color: var(--text-sub); font-style: italic;">等待數據中... (顏色設定會自動出現)</span> -->
+            <!-- </div> -->
+        <!-- </div> -->
+    <!-- </div> -->
+	
+	<div class="chart-box full-width" id="colorSettingsBox">
+        <div class="box-header" onclick="toggleBox('colorSettingsBox')">
+            <p class="box-title">🎨 通道顏色設定 (Channel Colors)</p>
+            <span class="toggle-icon">▼</span>
+        </div>
+        <div class="box-content" style="padding: 10px;">
+            
+            <div class="config-section" style="margin-bottom: 10px; border: 1px solid var(--border-color);">
+                <div class="config-header" onclick="toggleConfigSection('colorContentTMP', 'colorIconTMP')">
+                    <h3 style="font-size:14px; color:#17a2b8;">
+                        🌡️ TMP117 Colors (CH0~CH15)
+                    </h3>
+                    <span id="colorIconTMP" class="toggle-arrow" style="transform: rotate(-90deg);">▼</span>
+                </div>
+                <div id="colorContentTMP" class="config-content" style="display:none;">
+                    <div id="containerTMP" class="color-inputs-container"></div>
+                </div>
+            </div>
+
+            <div class="config-section" style="border: 1px solid var(--border-color);">
+                <div class="config-header" onclick="toggleConfigSection('colorContentLTC', 'colorIconLTC')">
+                    <h3 style="font-size:14px; color:#fd7e14;">
+                        🔥 LTC2983 Colors (LTC_1~LTC_20)
+                    </h3>
+                    <span id="colorIconLTC" class="toggle-arrow" style="transform: rotate(-90deg);">▼</span>
+                </div>
+                <div id="colorContentLTC" class="config-content" style="display:none;">
+                    <div id="containerLTC" class="color-inputs-container"></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+	
+	<div class="chart-box full-width" id="logBox" style="margin-top: 20px;">
+        <div class="box-header" onclick="toggleBox('logBox')">
+            <p class="box-title">📝 通訊日誌 (Communication Log)</p>
+            <span class="toggle-icon">▼</span>
+        </div>
+        <div class="box-content">
+            <div class="config-toolbar" style="border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 10px;">
+                <label style="font-weight:bold; cursor:pointer; display:flex; align-items:center; gap:5px;">
+                    <input type="checkbox" id="enableLogging"> 
+                    <span style="color: var(--text-main);">啟用紀錄 (Start Logging)</span>
+                </label>
+				
+				<div style="display:flex; align-items:center; gap:5px; border-left:1px solid #666; padding-left:15px;">
+                    <span style="font-size:13px; color:var(--text-sub);">Max Lines:</span>
+                    <input type="number" id="cfg_log_lines" value="100" min="10" step="10" style="width:60px; padding:2px;">
+                    <button class="btn-update" onclick="updateLogSettings()">Set</button>
+                </div>
+                
+                <button class="btn-remove" onclick="clearLog()" style="margin-left: 15px; padding: 4px 12px; font-size: 13px;">
+                    🗑️ 清除日誌 (Clear)
+                </button>
+            </div>
+            
+            <div id="commLogArea" style="
+                height: 250px; 
+                overflow-y: auto; 
+                background: #1e1e1e; 
+                color: #00ff00; 
+                padding: 10px; 
+                font-family: 'Consolas', 'Courier New', monospace; 
+                border: 1px solid var(--border-color); 
+                border-radius: 4px; 
+                font-size: 12px; 
+                line-height: 1.4; 
+                white-space: pre-wrap;
+                box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+            "></div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+	let channelStuckCounts = {}; // 記錄每個通道數值重複的次數
+    <!-- const STUCK_THRESHOLD = 20;  // 閾值：連續 20 筆資料完全相同視為異常 (約 2秒) -->
+    let stuckThreshold = 5;
+	let port, reader, writer, inputDone, outputDone;
+    let isConnected = false;
+    const defaultPalette = ['#36a2eb', '#ff6384', '#4bc0c0', '#ff9f40', '#9966ff', '#ffcd56', '#c9cbcf'];
+    
+    let channelColors = {};
+    let channelAddressMap = {}; 
+    let hiddenChannels = new Set();
+    let lastReceivedData = [];
+    
+	let MAX_LOG_LINES = 200;
+    let MAX_STORED_POINTS = 2000;
+    let VIEW_WINDOW_SIZE = 50;
+
+    let isBulkDisabling = false;
+
+    let anomalyRules = [
+        { op: '=', val: 0 } 
+    ];
+	// [修改] LTC2983 感測器類型定義 (完全對應 STM32 C code enum)
+    const LTC_TYPES = [
+        { value: 0,  name: "NONE (Unassigned)" },
+        
+        // --- Thermocouples (熱電偶) ---
+        { value: 1,  name: "Thermocouple - Type J" },
+        { value: 2,  name: "Thermocouple - Type K" },
+        { value: 3,  name: "Thermocouple - Type E" },
+        { value: 4,  name: "Thermocouple - Type N" },
+        { value: 5,  name: "Thermocouple - Type R" },
+        { value: 6,  name: "Thermocouple - Type S" },
+        { value: 7,  name: "Thermocouple - Type T" },
+        { value: 8,  name: "Thermocouple - Type B" },
+        { value: 9,  name: "Thermocouple - Custom" },
+
+        // --- RTDs (電阻測溫體) ---
+        { value: 10, name: "RTD - PT-10" },
+        { value: 11, name: "RTD - PT-50" },
+        { value: 12, name: "RTD - PT-100" },
+        { value: 13, name: "RTD - PT-200" },
+        { value: 14, name: "RTD - PT-500" },
+        { value: 15, name: "RTD - PT-1000" },
+        { value: 16, name: "RTD - 1000 (0.00375)" },
+        { value: 17, name: "RTD - NI-120" },
+        { value: 18, name: "RTD - Custom" },
+
+        // --- Thermistors (熱敏電阻) ---
+        { value: 19, name: "Thermistor - 44004 (2.252k)" },
+        { value: 20, name: "Thermistor - 44005 (3k)" },
+        { value: 21, name: "Thermistor - 44007 (5k)" },
+        { value: 22, name: "Thermistor - 44006 (10k)" },
+        { value: 23, name: "Thermistor - 44008 (30k)" },
+        { value: 24, name: "Thermistor - YSI 400 (2.252k)" },
+        { value: 25, name: "Thermistor - Spectrum 1003 (1k)" },
+        { value: 26, name: "Thermistor - Custom (Steinhart-Hart)" },
+        { value: 27, name: "Thermistor - Custom (Table)" },
+
+        // --- Others (其他) ---
+        { value: 28, name: "Diode" },
+        { value: 29, name: "Sense Resistor (Rsense)" },
+        { value: 30, name: "Direct ADC" }
+    ];
+
+    // 輔助函式：產生選單 HTML
+    function generateLTCTypeOptions(selectedValue) {
+        return LTC_TYPES.map(type => {
+            // 定義允許開放的 ID
+            const allowedIDs = [0, 2, 28];
+            
+            // 判斷是否啟用
+            const isEnabled = allowedIDs.includes(type.value);
+            
+            // 如果不啟用，加入 disabled 屬性
+            const disabledAttr = isEnabled ? '' : 'disabled';       
+
+            return `<option value="${type.value}" ${type.value == selectedValue ? 'selected' : ''} ${disabledAttr}>
+                        ${type.name}
+                    </option>`;
+        }).join('');
+    }
+	
+    // 初始化
+    window.addEventListener('DOMContentLoaded', () => {
+        loadConfigRows();
+		<!-- loadLTCConfigRows();     -->
+        loadBufferSettings(); 
+        loadAnomalyRules(); 
+        loadLogSettings(); 
+		
+		// [新增] 初始化 LTC 批量設定選單
+        const batchSelect = document.getElementById('batchLtcTypeSelect');
+        if (batchSelect) {
+            batchSelect.innerHTML = generateLTCTypeOptions(0); // 預設選中 0 (NONE)
+        }
+
+        // 載入 LTC 設定列 (這行要放在上面初始化之後，因為 loadLTCConfigRows 會用到 generateLTCTypeOptions)
+        loadLTCConfigRows();
+		
+		// 【新增】載入上次的間隔設定
+        const savedInterval = localStorage.getItem('stm32_tx_interval');
+        if (savedInterval) {
+            const el = document.getElementById('cfg_interval');
+            if(el) el.value = savedInterval;
+        }
+		
+		// --- 【新增】載入死鎖次數設定 ---
+        const savedStuck = localStorage.getItem('stm32_stuck_threshold');
+        if (savedStuck) {
+            stuckThreshold = parseInt(savedStuck);
+            // 確保介面顯示正確的數值
+            const input = document.getElementById('stuckThresholdInput');
+            if(input) input.value = stuckThreshold;
+        }
+		
+		// --- 【新增】監聽輸入框變化 ---
+        const stuckInput = document.getElementById('stuckThresholdInput');
+        if (stuckInput) {
+            stuckInput.addEventListener('change', (e) => {
+                let val = parseInt(e.target.value);
+                if (isNaN(val) || val < 1) val = 1; // 最小為 1
+                
+                stuckThreshold = val; // 更新全域變數
+                localStorage.setItem('stm32_stuck_threshold', val); // 儲存設定
+                
+                // 立即更新圖表，讓效果馬上顯示
+                updateChartWindow(); 
+            });
+        }
+		
+        ['configToggleIcon', 'anomalyToggleIcon', 'ltcConfigToggleIcon'].forEach(id => {
+            const icon = document.getElementById(id);
+            if (icon) icon.style.transform = "rotate(-90deg)";
+        });
+    });
+
+    try {
+        const savedColors = localStorage.getItem('stm32_channel_colors');
+        if (savedColors) {
+            channelColors = JSON.parse(savedColors);
+        }
+    } catch(e) { console.error("Load colors failed", e); }
+
+    let historyChart;
+    let currentBarChart;
+    const ctxHistory = document.getElementById('historyChart').getContext('2d');
+    const ctxBar = document.getElementById('currentBarChart').getContext('2d');
+    
+    let globalData = { labels: [], channels: {} };
+    let globalSampleCount = 0;
+    let isAutoScroll = true;
+
+    const checkAnomaly = (val) => {
+        if (val === null) return false; 
+        for (let rule of anomalyRules) {
+            const threshold = parseFloat(rule.val);
+            if (isNaN(threshold)) continue;
+            let isMatch = false;
+            switch(rule.op) {
+                case '=': isMatch = (Math.abs(val - threshold) < 0.001); break;
+                case '>': isMatch = (val > threshold); break;
+                case '<': isMatch = (val < threshold); break;
+                case '>=': isMatch = (val >= threshold); break;
+                case '<=': isMatch = (val <= threshold); break;
+            }
+            if (isMatch) return true; 
+        }
+        return false;
+    };
+
+
+	// [新增] 更新日誌設定
+    function updateLogSettings() {
+        const el = document.getElementById('cfg_log_lines');
+        const val = parseInt(el.value);
+        
+        if (isNaN(val) || val < 10) {
+            alert("請輸入有效的行數 (最小 10 行)");
+            return;
+        }
+        
+        MAX_LOG_LINES = val;
+        localStorage.setItem('stm32_log_lines', val);
+        
+        // 立即執行一次修剪，如果目前行數超過新設定，馬上刪除舊的
+        const logArea = document.getElementById('commLogArea');
+        while (logArea.children.length > MAX_LOG_LINES) {
+            logArea.removeChild(logArea.firstChild);
+        }
+        
+        // alert(`設定已更新: 保留最新 ${val} 行日誌`); // (選擇性提示)
+    }
+
+    // [新增] 載入日誌設定 (初始化時呼叫)
+    function loadLogSettings() {
+        const saved = localStorage.getItem('stm32_log_lines');
+        if (saved) {
+            const val = parseInt(saved);
+            if (!isNaN(val) && val >= 10) {
+                MAX_LOG_LINES = val;
+                const el = document.getElementById('cfg_log_lines');
+                if (el) el.value = val;
+            }
+        }
+    }
+
+    // --- Buffer Settings ---
+    function saveBufferSettings() {
+        const settings = { max: MAX_STORED_POINTS, view: VIEW_WINDOW_SIZE };
+        localStorage.setItem('stm32_buffer_settings', JSON.stringify(settings));
+    }
+
+    function loadBufferSettings() {
+        const saved = localStorage.getItem('stm32_buffer_settings');
+        if (saved) {
+            try {
+                const s = JSON.parse(saved);
+                if (s.max && s.view) {
+                    MAX_STORED_POINTS = parseInt(s.max);
+                    VIEW_WINDOW_SIZE = parseInt(s.view);
+                    document.getElementById('cfg_max_points').value = MAX_STORED_POINTS;
+                    document.getElementById('cfg_window_size').value = VIEW_WINDOW_SIZE;
+                }
+            } catch(e) {}
+        }
+    }
+
+    function updateBufferSettings() {
+        const newMax = parseInt(document.getElementById('cfg_max_points').value);
+        const newView = parseInt(document.getElementById('cfg_window_size').value);
+        if (isNaN(newMax) || isNaN(newView) || newMax < 100 || newView < 10) {
+            alert("請輸入有效的數值 (Store >= 100, View >= 10)");
+            return;
+        }
+        if (newView > newMax) {
+            alert("視窗大小 (View) 不能大於總儲存筆數 (Store)");
+            return;
+        }
+        MAX_STORED_POINTS = newMax;
+        VIEW_WINDOW_SIZE = newView;
+        if (globalData.labels.length > MAX_STORED_POINTS) {
+            const diff = globalData.labels.length - MAX_STORED_POINTS;
+            globalData.labels.splice(0, diff);
+            Object.values(globalData.channels).forEach(arr => arr.splice(0, diff));
+        }
+        saveBufferSettings();
+        updateScrollbarState();
+        updateChartWindow();
+        alert(`設定已更新並儲存: Store=${MAX_STORED_POINTS}, View=${VIEW_WINDOW_SIZE}`);
+    }
+
+    // --- Config & Anomaly UI ---
+    
+    function toggleConfigSection(contentId, iconId) {
+        const content = document.getElementById(contentId);
+        const icon = document.getElementById(iconId);
+        if (content.style.display === 'block') {
+            content.style.display = 'none';
+            icon.style.transform = "rotate(-90deg)"; 
+        } else {
+            content.style.display = 'block';
+            icon.style.transform = "rotate(0deg)";   
+        }
+    }
+
+    function addAnomalyRow(op = '=', val = 0) {
+        const container = document.getElementById('anomalyRowsContainer');
+        const rowId = 'arow-' + Date.now() + Math.random().toString(36).substr(2, 9);
+        
+        const div = document.createElement('div');
+        div.className = 'config-row';
+        div.id = rowId;
+        div.innerHTML = `
+            <label>若溫度 
+                <select class="row-op-select">
+                    <option value="=" ${op=='='?'selected':''}>= (等於)</option>
+                    <option value=">" ${op=='>'?'selected':''}>&gt; (大於)</option>
+                    <option value="<" ${op=='<'?'selected':''}>&lt; (小於)</option>
+                    <option value=">=" ${op=='>='?'selected':''}>&ge; (大於等於)</option>
+                    <option value="<=" ${op=='<='?'selected':''}>&le; (小於等於)</option>
+                </select>
+            </label>
+            <input type="number" class="row-val-input" value="${val}" style="width:70px;">
+            <button class="btn-remove" onclick="removeAnomalyRow('${rowId}')">移除</button>
+        `;
+        container.appendChild(div);
+
+        div.querySelector('.row-op-select').addEventListener('change', saveAnomalyRules);
+        div.querySelector('.row-val-input').addEventListener('change', saveAnomalyRules);
+        
+        const content = document.getElementById('anomalyContent');
+        const icon = document.getElementById('anomalyToggleIcon');
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            icon.style.transform = "rotate(0deg)";
+        }
+        
+        saveAnomalyRules();
+    }
+
+    function removeAnomalyRow(rowId) {
+        const row = document.getElementById(rowId);
+        if (row) {
+            row.remove();
+            saveAnomalyRules();
+        }
+    }
+
+    function saveAnomalyRules() {
+        const rows = document.querySelectorAll('#anomalyRowsContainer .config-row');
+        const rules = [];
+        rows.forEach(row => {
+            const op = row.querySelector('.row-op-select').value;
+            const val = row.querySelector('.row-val-input').value;
+            rules.push({ op, val });
+        });
+        anomalyRules = rules;
+        
+        const filter = document.getElementById('filterAnomalies').checked;
+        const dataToSave = { rules, filter };
+        
+        localStorage.setItem('stm32_anomaly_config', JSON.stringify(dataToSave));
+        
+        updateChartWindow();
+        updateBarChart(lastReceivedData);
+    }
+
+    function loadAnomalyRules() {
+        const saved = localStorage.getItem('stm32_anomaly_config');
+        const container = document.getElementById('anomalyRowsContainer');
+        container.innerHTML = ''; 
+
+        if (saved) {
+            try {
+                const data = JSON.parse(saved);
+                if (data.rules && Array.isArray(data.rules)) {
+                    data.rules.forEach(r => addAnomalyRow(r.op, r.val));
+                } else {
+                    addAnomalyRow('=', 0); 
+                }
+                
+                if (data.filter !== undefined) {
+                    document.getElementById('filterAnomalies').checked = data.filter;
+                }
+            } catch(e) { addAnomalyRow('=', 0); }
+        } else {
+            addAnomalyRow('=', 0); 
+        }
+    }
+
+    // --- Communication ---
+	
+	// 【新增】設定傳送間隔
+    async function updateTxInterval() {
+        if (!isConnected) {
+            alert("請先連線 (Connect)！");
+            return;
+        }
+        
+        const input = document.getElementById('cfg_interval');
+        const ms = parseInt(input.value);
+
+        // 基本防呆 (限制最小 10ms)
+        if (isNaN(ms) || ms < 10) {
+            alert("無效數值！最小間隔為 10ms。");
+            return;
+        }
+
+        // 發送指令: CMD:INTERVAL <ms>
+        // 例如: CMD:INTERVAL 1000
+        await sendStringCommand(`CMD:INTERVAL ${ms}`);
+        
+        // 儲存到 LocalStorage 以便下次開啟自動帶入
+        localStorage.setItem('stm32_tx_interval', ms);
+        
+        // 為了讓使用者知道有送出，可以讓按鈕閃一下或跳個提示 (這裡用簡單提示)
+        // alert(`已發送設定: ${ms}ms`); // 覺得太吵可以註解掉這行
+    }
+
+    async function sendStringCommand(cmdString) {
+        if (!isConnected || !writer) {
+            alert("請先連接設備！");
+            return;
+        }
+        try {
+            const data = cmdString + "\r\n";
+            await writer.write(data);			
+			appendLog("TX", cmdString);			
+            console.log("Sent Command:", data.trim());
+        } catch (e) {
+            alert("發送失敗: " + e);
+        }
+    }
+
+    
+	
+	// 【修正】關閉所有 TMP117 通道
+    async function disableAllChannels() {
+        if (!isConnected) {
+            alert("請先連線 (Connect)！");
+            return;
+        }
+        
+        if (window.isBulkDisabling) return; 
+
+        // 1. 取得選項狀態
+        const chkBox = document.getElementById('clearDataOnDisable');
+        const clearOnDisable = chkBox ? chkBox.checked : false;
+
+        const skipChk = document.getElementById('skipDisableConfirm');
+        const skipConfirm = skipChk ? skipChk.checked : false;
+        
+        if (!skipConfirm) {
+            if (!confirm("確定要關閉所有已開啟的 TMP117 通道嗎？")) return;
+        }
+
+        window.isBulkDisabling = true;
+
+        try {
+            // 找出所有 TMP117 通道 (包括舊版 CHx 與新版 TMP117_CHx)
+            const targetChannels = Object.keys(globalData.channels).filter(key => 
+                key.startsWith('CH') || key.startsWith('TMP117_CH')
+            );
+            
+            for (const chKey of targetChannels) {
+                // [修正重點] 正確解析出純數字通道號
+                // 先嘗試移除 TMP117_CH，再移除 CH，確保只剩下數字
+                let ch = chKey.replace('TMP117_CH', '').replace('CH', '');
+                
+                // 發送關閉指令 (CMD:SET_117 <ch> 0)
+                // 這樣 ch 就會是純數字 (例如 "1")，而不是 "TMP117_1"
+                await sendStringCommand(`CMD:SET_117 ${ch} 0`);
+                
+                // 移除圖表數據 (若有勾選)
+                if (clearOnDisable) {
+                    delete globalData.channels[chKey];
+                    hiddenChannels.delete(chKey);
+                    
+                    // 順便清除位址紀錄
+                    if (channelAddressMap[chKey]) {
+                        delete channelAddressMap[chKey];
+                    }
+                }
+                
+                // 稍微延遲避免指令塞車
+                await new Promise(r => setTimeout(r, 20));
+            }
+            
+            // 更新畫面
+            updateChartWindow();
+            
+        } catch (error) {
+            console.error("Disable All Error:", error);
+            alert("執行 Disable All 時發生錯誤");
+        } finally {
+            window.isBulkDisabling = false; 
+        }
+    }
+
+    // --- Config Rows ---
+    function saveConfigRows() {
+        const rows = document.querySelectorAll('#configRowsContainer .config-row');
+        const dataToSave = [];
+        rows.forEach(row => {
+            const ch = row.querySelector('.row-ch-select').value;
+            const addr = row.querySelector('.row-addr-select').value;
+            dataToSave.push({ ch, addr });
+        });
+        localStorage.setItem('stm32_config_rows', JSON.stringify(dataToSave));
+    }
+
+    function loadConfigRows() {
+        const saved = localStorage.getItem('stm32_config_rows');
+        if (saved) {
+            try {
+                const data = JSON.parse(saved);
+                if (Array.isArray(data) && data.length > 0) {
+                    data.forEach(item => addConfigRow(item.ch, item.addr));
+                    return;
+                }
+            } catch (e) {}
+        }
+        addConfigRow(0);
+    }
+
+    function addConfigRow(defaultCh = null, defaultAddr = null) {
+        const container = document.getElementById('configRowsContainer');
+        const rowId = 'row-' + Date.now() + Math.random().toString(36).substr(2, 9);
+        
+        if (defaultCh === null) {
+            const rows = container.querySelectorAll('.row-ch-select');
+            if (rows.length > 0) {
+                let lastVal = parseInt(rows[rows.length-1].value);
+                defaultCh = (lastVal + 1) % 32; 
+            } else { defaultCh = 0; }
+        }
+        // [V41 FIX] 位址改為十進位數值字串
+        if (defaultAddr === null) defaultAddr = "72"; 
+
+        const div = document.createElement('div');
+        div.className = 'config-row';
+        div.id = rowId;
+        div.innerHTML = `
+            <label>CH: 
+                <select class="row-ch-select">
+                    ${generateChannelOptions(defaultCh)}
+                </select>
+            </label>
+            <label>Addr:
+                <select class="row-addr-select">
+                    <option value="0" style="color:red; font-weight:bold;">OFF</option>
+                    <option value="72" ${defaultAddr=="72"?'selected':''}>0x48 (GND)</option>
+                    <option value="73" ${defaultAddr=="73"?'selected':''}>0x49 (V+)</option>
+                    <option value="74" ${defaultAddr=="74"?'selected':''}>0x4A (SDA)</option>
+                    <option value="75" ${defaultAddr=="75"?'selected':''}>0x4B (SCL)</option>
+                </select>
+            </label>
+            <button class="btn-config btn-row-set" onclick="setSingleRow('${rowId}')" ${isConnected ? '' : 'disabled'}>Set</button>
+            <button class="btn-remove" onclick="removeConfigRow('${rowId}')">-</button>
+        `;
+        container.appendChild(div);
+
+        // Auto expand
+        const content = document.getElementById('configContent');
+        const icon = document.getElementById('configToggleIcon');
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            icon.style.transform = "rotate(0deg)";
+        }
+
+        div.querySelector('.row-ch-select').addEventListener('change', saveConfigRows);
+        div.querySelector('.row-addr-select').addEventListener('change', saveConfigRows);
+        saveConfigRows();
+    }
+
+    function generateChannelOptions(selected) {
+        let opts = '';
+        for(let i=0; i<=15; i++) {
+            opts += `<option value="${i}" ${i==selected ? 'selected' : ''}>${i}</option>`;
+        }
+        return opts;
+    }
+
+    function removeConfigRow(rowId) {
+        const row = document.getElementById(rowId);
+        if (row) {
+            row.remove();
+            saveConfigRows(); 
+        }
+    }
+
+    async function setSingleRow(rowId) {
+        const row = document.getElementById(rowId);
+        if (!row) return;
+        const ch = row.querySelector('.row-ch-select').value;
+        const addr = row.querySelector('.row-addr-select').value;
+		<!-- const chkBox = document.getElementById('clearDataOnDisable'); -->
+        <!-- const clearOnDisable = chkBox ? chkBox.checked : false; -->
+        const clearOnDisable = document.getElementById('clearDataOnDisable').checked;
+        await executeConfigCommand(ch, addr, clearOnDisable);
+    }
+
+// 【修正版】Set All 功能 (已修復 checkbox 報錯問題)
+    async function setAllRows() {
+        const rows = document.querySelectorAll('#configRowsContainer .config-row');
+        if (rows.length === 0) return;
+        
+        // 1. 取得 checkbox 狀態 (加入安全檢查，避免找不到物件時當機)
+        const chkBox = document.getElementById('clearDataOnDisable');
+        const clearOnDisable = chkBox ? chkBox.checked : false; 
+        
+        // 2. 依序發送指令
+        for (const row of rows) {
+            const ch = row.querySelector('.row-ch-select').value;
+            const addr = row.querySelector('.row-addr-select').value;
+            
+            // 呼叫指令發送
+            await executeConfigCommand(ch, addr, clearOnDisable);
+            
+            // 稍微等待 10ms，避免指令發送太快塞車
+            await new Promise(r => setTimeout(r, 10));
+        }
+        
+        // 3. 顯示完成提示 (如果沒有勾選跳過確認)
+        const skipConfirmBox = document.getElementById('skipDisableConfirm');
+        const skipConfirm = skipConfirmBox ? skipConfirmBox.checked : false;
+        
+        if (!skipConfirm) { 
+            alert(`已依序發送 ${rows.length} 組配置指令！`); 
+        }
+    }
+
+    // --- [V41 FIX] 修正位址發送與解析邏輯 ---
+    async function executeConfigCommand(ch, addr, clearOnDisable) {
+        if (addr === "0") {
+             delete channelAddressMap[`CH${ch}`];
+             const cmd = `CMD:SET_117 ${ch} 0`;
+             await sendStringCommand(cmd);
+             if (clearOnDisable) {
+                 delete globalData.channels[`CH${ch}`];
+                 hiddenChannels.delete(`CH${ch}`);
+             }
+        } else {
+             // 位址轉換：從選單的十進位(例如 "72")轉為十六進位字串(例如 "48")發送
+             const addrInt = parseInt(addr, 10);
+             const hexStr = addrInt.toString(16).toUpperCase(); 
+             
+             // 更新本地顯示位址
+             channelAddressMap[`CH${ch}`] = `0x${hexStr}`;
+             
+             // 發送指令，STM32 端 API.c 使用 sscanf(..., "%*s %d %x", ...)
+             // 傳送 hexStr (如 "48") 給 STM32 的 %x 解析
+             const cmd = `CMD:SET_117 ${ch} ${hexStr}`;
+             await sendStringCommand(cmd);
+        }
+        updateChartWindow();
+    }
+    
+	function getChannelColor(chName) {
+        if (channelColors[chName]) return channelColors[chName];
+
+        if (chName.startsWith('LTC')) {
+            // 解析 LTC_d_c (Device_Channel)
+            const parts = chName.split('_');
+            // parts[0]="LTC", parts[1]="DevID", parts[2]="ChID"
+            const devIdx = parseInt(parts[1]) || 1;
+            const chIdx  = parseInt(parts[2]) || 1;
+            
+            // [修改] 顏色演算法
+            // 基礎色相：Device 1 從 0(紅)開始, Device 2 從 180(青)開始... 
+            // 加上 (通道 * 15) 讓同晶片內的通道顏色錯開
+            const baseHue = (devIdx - 1) * 120; 
+            const hue = (baseHue + (chIdx * 15)) % 360;
+            
+            return `hsl(${hue}, 90%, 55%)`;
+        } 
+        else if (chName.startsWith('TMP117')) {
+            // TMP117 邏輯不變
+            const chIdx = parseInt(chName.replace('TMP117_CH', '')) || 0;
+            return defaultPalette[chIdx % defaultPalette.length];
+        }
+        else if (chName.startsWith('CH')) {
+            // 舊版相容
+            const chIdx = parseInt(chName.replace('CH', '')) || 0;
+            return defaultPalette[chIdx % defaultPalette.length];
+        }
+        
+        return '#999';
+    }
+
+    function addColorPickerUI(chName, color) {
+        const container = document.getElementById('colorInputsContainer');
+        if (document.getElementById(`color-picker-${chName}`)) return; 
+        if (container.querySelector('span')) container.innerHTML = '';
+        const div = document.createElement('div');
+        div.className = 'color-item';
+        div.innerHTML = `<label for="color-picker-${chName}">${chName}</label><input type="color" id="color-picker-${chName}" value="${color}">`;
+        container.appendChild(div);
+        div.querySelector('input').addEventListener('input', (e) => {
+            updateChannelColor(chName, e.target.value);
+        });
+    }
+
+    function updateChannelColor(chName, newColor) {
+        channelColors[chName] = newColor;
+        localStorage.setItem('stm32_channel_colors', JSON.stringify(channelColors));
+        historyChart.data.datasets.forEach(ds => {
+            if (ds.chName === chName) {
+                ds.borderColor = newColor;
+                ds.backgroundColor = newColor;
+            }
+        });
+        const barIndex = currentBarChart.data.labels.indexOf(chName);
+        if (barIndex !== -1) {
+            currentBarChart.data.datasets[0].backgroundColor[barIndex] = newColor;
+        }
+        historyChart.update('none');
+        currentBarChart.update('none');
+    }
+
+    function toggleDarkMode() {
+        const isDark = document.getElementById('darkModeToggle').checked;
+        document.body.classList.toggle('dark-mode', isDark);
+        const textColor = isDark ? '#e0e0e0' : '#666';
+        const gridColor = isDark ? '#444' : '#ddd';
+        [historyChart, currentBarChart].forEach(chart => {
+            if (chart) {
+                if(chart.options.scales.x) {
+                    chart.options.scales.x.ticks.color = textColor;
+                    chart.options.scales.x.grid.color = gridColor;
+                }
+                if(chart.options.scales.y) {
+                    chart.options.scales.y.ticks.color = textColor;
+                    chart.options.scales.y.grid.color = gridColor;
+                }
+                if(chart.options.plugins.legend) {
+                    chart.options.plugins.legend.labels.color = textColor;
+                }
+                chart.update('none');
+            }
+        });
+    }
+
+    function initCharts() {
+        historyChart = new Chart(ctxHistory, {
+            type: 'line',
+            data: { labels: [], datasets: [] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false, 
+                animation: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: { title: { display: true, text: 'Sample' } },
+                    y: { title: { display: true, text: 'Temp (°C)' } }
+                },
+                plugins: {
+                    legend: { 
+                        position: 'top', 
+                        labels: { 
+                            font: { family: 'monospace' },
+                            filter: function(item, chart) {
+                                const dataset = chart.datasets[item.datasetIndex];
+                                if (dataset.isAnomalyHidden) return false;
+                                return true; 
+                            }
+                        },
+                        onClick: function(e, legendItem, legend) {
+                            const index = legendItem.datasetIndex;
+                            const dataset = legend.chart.data.datasets[index];
+                            const chName = dataset.chName;
+                            if (legend.chart.isDatasetVisible(index)) {
+                                hiddenChannels.add(chName);
+                            } else {
+                                hiddenChannels.delete(chName);
+                            }
+                            Chart.defaults.plugins.legend.onClick.call(this, e, legendItem, legend);
+                            updateChartWindow(); 
+                            updateBarChart(lastReceivedData);
+                        }
+                    } 
+                }
+            }
+        });
+
+        currentBarChart = new Chart(ctxBar, {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Temp', data: [], backgroundColor: [], borderWidth: 1 }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: { legend: { display: false } }
+            }
+        });
+        toggleDarkMode();
+    }
+    initCharts();
+
+    navigator.serial.addEventListener("disconnect", (event) => {
+        if (port && event.target === port) closeConnection(true);
+    });
+
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+        try {
+            port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 115200 });
+            const textDecoder = new TextDecoderStream();
+            inputDone = port.readable.pipeTo(textDecoder.writable);
+            reader = textDecoder.readable.getReader();
+            const textEncoder = new TextEncoderStream();
+            outputDone = textEncoder.readable.pipeTo(port.writable);
+            writer = textEncoder.writable.getWriter();
+            updateUIState(true);
+            readLoop();
+        } catch (err) { alert('連線失敗: ' + err); }
+    });
+
+    document.getElementById('disconnectBtn').addEventListener('click', () => closeConnection(false));
+
+    async function closeConnection(isPhysical) {
+        if (!isConnected) return;
+        if (reader) await reader.cancel().catch(()=>{});
+        if (writer) { await writer.close().catch(()=>{}); writer = null; }
+        if (inputDone) await inputDone.catch(()=>{});
+        if (outputDone) await outputDone.catch(()=>{});
+        if (port) { await port.close().catch(()=>{}); port = null; }
+        updateUIState(false);
+        if(isPhysical) alert("⚠️ 線路斷開！");
+    }
+
+    async function readLoop() {
+        let buffer = "";
+        try {
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                if (value) {
+                    buffer += value;
+                    let lines = buffer.split('\n');
+                    buffer = lines.pop(); 
+					for (let line of lines) {
+                        let trimmedLine = line.trim();
+                        if (trimmedLine) {
+                            // 【新增這行】紀錄接收到的原始數據
+                            appendLog("RX", trimmedLine);
+                            
+                            processData(trimmedLine);
+                        }
+					}	
+                }
+            }
+        } catch (e) { console.warn(e); } 
+        finally { if(reader) reader.releaseLock(); }
+    }
+
+    function updateUIState(connected) {
+        isConnected = connected;
+        document.getElementById('status').innerText = connected ? "✅ 已連線" : "❌ 未連線";
+        document.getElementById('status').className = connected ? "status-badge status-connected" : "status-badge status-disconnected";
+        document.getElementById('connectBtn').disabled = connected;
+        document.getElementById('disconnectBtn').disabled = !connected;
+        document.getElementById('btn_set_all').disabled = !connected;
+        document.getElementById('btn_disable_all').disabled = !connected; 
+        document.querySelectorAll('.btn-row-set').forEach(btn => btn.disabled = !connected);
+		
+		const btnSetAllLTC = document.getElementById('btn_set_all_ltc');
+        if(btnSetAllLTC) btnSetAllLTC.disabled = !connected;
+
+        const btnDisableAllLTC = document.getElementById('btn_disable_all_ltc');
+        if(btnDisableAllLTC) btnDisableAllLTC.disabled = !connected;
+
+        // 控制每一列 LTC 的 Set 按鈕 (需搭配第三步修改 class)
+        document.querySelectorAll('.btn-ltc-row-set').forEach(btn => btn.disabled = !connected);
+    }
+
+	// [新增] 輔助函式：將數據存入全域變數
+    function saveToGlobalData(key, value) {
+        if (!globalData.channels[key]) {
+            // 如果是新通道，自動補齊前面缺少的點數
+            let missingCount = globalData.labels.length - 1;
+            if(missingCount < 0) missingCount = 0; 
+            globalData.channels[key] = new Array(missingCount).fill(null);
+        }
+        globalData.channels[key].push(value);
+    }
+	
+	// 用來記錄已經產生過 Input 的通道，避免重複產生
+    let renderedChannels = new Set();
+
+    // [新增] 渲染顏色設定介面
+   // [修改] 渲染顏色設定介面 (包含更聰明的排序)
+    function renderColorInputs() {
+        const containerTMP = document.getElementById('containerTMP');
+        const containerLTC = document.getElementById('containerLTC');
+        
+        if (!containerTMP || !containerLTC) return;
+
+        // 取得所有通道並排序
+        const channels = Object.keys(globalData.channels).sort((a, b) => {
+            // 1. 比較類型 (TMP 排前面)
+            const isLtca = a.startsWith('LTC');
+            const isLtcb = b.startsWith('LTC');
+            if (isLtca !== isLtcb) return isLtca ? 1 : -1; // TMP first
+
+            // 2. 同類型比較數字
+            if (!isLtca) { 
+                // 都是 TMP117_CHx
+                const numA = parseInt(a.replace('TMP117_CH', '')) || 0;
+                const numB = parseInt(b.replace('TMP117_CH', '')) || 0;
+                return numA - numB;
+            } else {
+                // 都是 LTC_x_y -> 先比 x (Device)，再比 y (Channel)
+                const partsA = a.split('_').map(Number); // [NaN, 1, 1]
+                const partsB = b.split('_').map(Number);
+                
+                // 比 Device ID (index 1)
+                if (partsA[1] !== partsB[1]) return partsA[1] - partsB[1];
+                // 比 Channel ID (index 2)
+                return partsA[2] - partsB[2];
+            }
+        });
+
+        channels.forEach(chName => {
+            if (renderedChannels.has(chName)) return;
+
+            let color = getChannelColor(chName);
+            if (color.startsWith('hsl')) color = hslToHexStr(color);
+
+            const div = document.createElement('div');
+            div.className = 'color-item';
+            div.innerHTML = `
+                <label for="cp_${chName}">${chName}</label>
+                <input type="color" id="cp_${chName}" value="${color}">
+            `;
+
+            const input = div.querySelector('input');
+            input.addEventListener('change', (e) => {
+                channelColors[chName] = e.target.value;
+                localStorage.setItem('stm32_channel_colors', JSON.stringify(channelColors));
+                updateChartWindow();
+            });
+
+            // 分類放入對應容器
+            if (chName.startsWith('LTC')) {
+                containerLTC.appendChild(div);
+            } else {
+                containerTMP.appendChild(div);
+            }
+
+            renderedChannels.add(chName);
+        });
+    }
+
+    // [輔助] 解析 hsl(h, s%, l%) 字串並轉為 Hex
+    function hslToHexStr(hslStr) {
+        // 簡易解析: hsl(30, 100%, 50%)
+        const sep = hslStr.indexOf(",") > -1 ? "," : " ";
+        hslStr = hslStr.substr(4).split(")")[0].split(sep);
+        
+        let h = parseInt(hslStr[0]);
+        let s = parseInt(hslStr[1].replace('%','')) / 100;
+        let l = parseInt(hslStr[2].replace('%','')) / 100;
+
+        let c = (1 - Math.abs(2 * l - 1)) * s;
+        let x = c * (1 - Math.abs((h / 60) % 2 - 1));
+        let m = l - c / 2;
+        let r = 0, g = 0, b = 0;
+
+        if (0 <= h && h < 60) { r = c; g = x; b = 0; }
+        else if (60 <= h && h < 120) { r = x; g = c; b = 0; }
+        else if (120 <= h && h < 180) { r = 0; g = c; b = x; }
+        else if (180 <= h && h < 240) { r = 0; g = x; b = c; }
+        else if (240 <= h && h < 300) { r = x; g = 0; b = c; }
+        else if (300 <= h && h < 360) { r = c; g = 0; b = x; }
+
+        r = Math.round((r + m) * 255).toString(16).padStart(2, '0');
+        g = Math.round((g + m) * 255).toString(16).padStart(2, '0');
+        b = Math.round((b + m) * 255).toString(16).padStart(2, '0');
+
+        return `#${r}${g}${b}`;
+    }
+	
+	function processData(line) {
+        if (!line.startsWith('{')) return;
+        if (isBulkDisabling) return;
+        
+        try {
+            const json = JSON.parse(line);
+            const tmpData = json.TMP117 || json.data;
+            const ltcData = json.LTC2983;
+
+            if ((!tmpData || tmpData.length === 0) && (!ltcData || ltcData.length === 0)) return;
+
+            globalSampleCount++;
+            globalData.labels.push(globalSampleCount);
+			
+            // ▼▼▼ [最終修正版 V3] 自動 CSV 存檔 (修復資料覆蓋與時間格式) ▼▼▼
+            
+            // 1. 產生時間字串 (改用斜線，Excel 支援度較好)
+            const csvNow = new Date();
+            const timeStr = csvNow.getFullYear() + "/" +
+                            (csvNow.getMonth() + 1).toString().padStart(2, '0') + "/" +
+                            csvNow.getDate().toString().padStart(2, '0') + " " +
+                            csvNow.getHours().toString().padStart(2, '0') + ":" +
+                            csvNow.getMinutes().toString().padStart(2, '0') + ":" +
+                            csvNow.getSeconds().toString().padStart(2, '0') + "." +
+                            csvNow.getMilliseconds().toString().padStart(3, '0');
+
+            // 2. 提取數據 (修復欄位名稱，避免 Multiplexer 資料互相覆蓋)
+            let csvRowData = {};
+
+            // (A) 處理 TMP117
+            if (tmpData && Array.isArray(tmpData)) {
+                tmpData.forEach(item => {
+                    // [重點修復] 優先使用 Channel (c) 當作 Key，避免同 Address 覆蓋
+                    // 如果有 item.c (多工器通道)，就用 TMP117_CHx
+                    if (item.c !== undefined) {
+                        csvRowData[`TMP117_CH${item.c}`] = item.v;
+                    } 
+                    // 如果沒有 c 只有 a (直連)，才用 T_Addr_x
+                    else if (item.a !== undefined) {
+                        csvRowData[`T_Addr_${item.a}`] = item.v;
+                    }
+                });
+            }
+
+            // (B) 處理 LTC2983
+            if (ltcData && Array.isArray(ltcData)) {
+                ltcData.forEach(item => {
+                    // 格式改回您習慣的: LTC_1_5 (Device_Channel)
+                    let dev = item.d || 1; 
+                    if (item.c !== undefined && item.v !== undefined) {
+                        csvRowData[`LTC_${dev}_${item.c}`] = item.v;
+                    }
+                });
+            }
+
+            // 3. 送入自動存檔系統
+            if (typeof handleAutoSave === 'function') {
+                handleAutoSave(timeStr, csvRowData);
+            }
+            
+            // ▲▲▲ [修正結束] ▲▲▲
+			
+            let receivedKeys = new Set();
+
+            // =========================================================
+            // 1. 處理 TMP117 -> 命名改為 TMP117_CHx
+            // =========================================================
+            if (tmpData && tmpData.length > 0) {
+                lastReceivedData = tmpData; 
+                
+                tmpData.forEach((item) => {
+                    // [修改] 加上前綴
+                    let chKey = `TMP117_CH${item.c}`; 
+                    receivedKeys.add(chKey);
+                    let currentVal = item.v;
+
+                    // 死鎖偵測
+                    let lastState = channelStuckCounts[chKey] || { lastVal: null, count: 0 };
+                    if (currentVal === lastState.lastVal && currentVal !== 0) {
+                        lastState.count++;
+                    } else {
+                        lastState.count = 0;
+                        lastState.lastVal = currentVal;
+                    }
+                    channelStuckCounts[chKey] = lastState;
+
+                    saveToGlobalData(chKey, currentVal);
+                    
+                    if (item.a !== undefined) {
+                        let hexAddr = item.a.toString(16).toUpperCase();
+                        channelAddressMap[chKey] = `0x${hexAddr}`;
+                    }
+                });
+            }
+
+            // =========================================================
+            // 2. 處理 LTC2983 -> 命名改為 LTC_1_x (預設 Device 1)
+            // =========================================================
+            if (ltcData && ltcData.length > 0) {
+                ltcData.forEach((item) => {
+					
+					let devId = item.d || 1; 
+                    let chId = item.c;                    
+                    // 組合名稱：LTC_1_1, LTC_2_1...
+                    let chKey = `LTC_${devId}_${chId}`;
+
+                    receivedKeys.add(chKey);
+                    let currentVal = item.v;
+
+                    // 死鎖偵測
+                    let lastState = channelStuckCounts[chKey] || { lastVal: null, count: 0 };
+                    if (currentVal === lastState.lastVal && currentVal !== 0) {
+                        lastState.count++;
+                    } else {
+                        lastState.count = 0;
+                        lastState.lastVal = currentVal;
+                    }
+                    channelStuckCounts[chKey] = lastState;
+
+                    saveToGlobalData(chKey, currentVal);
+                });
+            }
+
+            // =========================================================
+            // 3. 資料對齊 & Buffer 管理 (不變)
+            // =========================================================
+            Object.keys(globalData.channels).forEach(existingKey => {
+                if (!receivedKeys.has(existingKey)) {
+                    globalData.channels[existingKey].push(null);
+                }
+            });
+
+            if (globalData.labels.length > MAX_STORED_POINTS) {
+                globalData.labels.shift();
+                Object.values(globalData.channels).forEach(arr => arr.shift());
+            }
+
+            updateScrollbarState();
+            updateChartWindow();
+            
+            // 檢查是否需要新增顏色設定
+            renderColorInputs();
+            
+            // 更新長條圖 (合併數據)
+            const barChartPayload = [];
+            if (tmpData) tmpData.forEach(i => barChartPayload.push({ key: `TMP117_CH${i.c}`, val: i.v }));
+            if (ltcData) ltcData.forEach(i => barChartPayload.push({ key: `LTC_1_${i.c}`, val: i.v }));
+            
+            if (typeof updateBarChart === 'function') {
+                updateBarChart(barChartPayload);
+            }
+
+        } catch (e) { console.warn("Parse Error:", e); }
+    }
+
+    function updateScrollbarState() {
+        const scrollBar = document.getElementById('historyScroll');
+        const infoSpan = document.getElementById('scrollInfo');
+        const totalPoints = globalData.labels.length;
+        
+        let maxScroll = Math.max(0, totalPoints - VIEW_WINDOW_SIZE);
+        scrollBar.max = maxScroll;
+
+        if (isAutoScroll) scrollBar.value = maxScroll;
+
+        if (totalPoints <= VIEW_WINDOW_SIZE) {
+            scrollBar.disabled = true;
+            infoSpan.innerText = `Buffering: ${totalPoints}/${VIEW_WINDOW_SIZE}`;
+            infoSpan.style.color = document.body.classList.contains('dark-mode') ? '#777' : '#666';
+        } else {
+            scrollBar.disabled = false;
+            if (isAutoScroll) {
+                infoSpan.innerText = "Auto Tracking";
+                infoSpan.style.color = "green";
+            } else {
+                let currentVal = parseInt(scrollBar.value);
+                infoSpan.innerText = `History: -${maxScroll - currentVal}`;
+                infoSpan.style.color = "#dc3545"; 
+            }
+        }
+    }
+
+   function updateBarChart(dataItems) {
+        if (!currentBarChart) return;
+        
+        // 如果沒有數據，清空圖表
+        if (!dataItems || dataItems.length === 0) {
+            currentBarChart.data.labels = [];
+            currentBarChart.data.datasets[0].data = [];
+            currentBarChart.update('none');
+            return;
+        }
+
+        const labels = [];
+        const values = [];
+        const colors = [];
+        
+        // 取得異常過濾設定
+        const filterAnomalies = document.getElementById('filterAnomalies') ? document.getElementById('filterAnomalies').checked : false;
+
+        dataItems.forEach(item => {
+            // [修正] 直接使用 processData 傳來的完整名稱 (key) 與數值 (val)
+            let chName = item.key; 
+            let val = item.val;
+
+			<!-- if (val <= -273.0) return; -->
+            // 1. 如果使用者手動隱藏了該通道，跳過
+            if (hiddenChannels.has(chName)) return;
+
+            // 2. 如果開啟了異常過濾，且數值異常，跳過
+            if (filterAnomalies && checkAnomaly(val)) return;
+
+            // 3. 加入顯示列表
+            labels.push(chName);
+            values.push(val);
+            
+            // 4. 自動取得對應顏色 (CH為冷色，LTC為暖色)
+            colors.push(getChannelColor(chName));
+        });
+
+        // 更新 Chart.js 數據
+        currentBarChart.data.labels = labels;
+        currentBarChart.data.datasets[0].data = values;
+        currentBarChart.data.datasets[0].backgroundColor = colors;
+        currentBarChart.data.datasets[0].borderColor = colors;
+
+        // 使用無動畫模式更新
+        currentBarChart.update('none');
+    }
+
+    window.onScrollChange = function() {
+        const scrollBar = document.getElementById('historyScroll');
+        const maxScroll = parseInt(scrollBar.max);
+        const currentVal = parseInt(scrollBar.value);
+        if (currentVal >= maxScroll) isAutoScroll = true;
+        else isAutoScroll = false;
+        updateScrollbarState();
+        updateChartWindow();
+    }
+	// 【新增功能】批量套用 Address
+    function applyBatchAddr() {
+        const val = document.getElementById('batchAddrSelect').value;
+        const selects = document.querySelectorAll('#configRowsContainer .row-addr-select');
+        
+        if (selects.length === 0) {
+            alert("沒有可修改的配置列！");
+            return;
+        }
+
+        selects.forEach(select => {
+            select.value = val;
+        });
+        
+        saveConfigRows(); // 儲存變更
+        // alert("已更新所有 Address，請按 Set All 發送指令。"); // (選擇性提示)
+    }
+	
+	// --- Log Functions ---
+    function appendLog(type, msg) {
+        // 檢查是否勾選紀錄
+        const isLogging = document.getElementById('enableLogging').checked;
+        if (!isLogging) return;
+
+        const logArea = document.getElementById('commLogArea');
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false }) + "." + String(now.getMilliseconds()).padStart(3, '0');
+        
+        // TX (發送) 用黃色，RX (接收) 用綠色/白色
+        const color = type === 'TX' ? '#ffeb3b' : '#a6e22e'; // Yellow for TX, Green for RX
+        const icon = type === 'TX' ? '📤' : '📥';
+        
+        const div = document.createElement('div');
+        div.style.borderBottom = "1px solid #333";
+        div.innerHTML = `<span style="color:#888;">[${timeStr}]</span> <span style="color:${color}; font-weight:bold;">${icon} ${type}:</span> <span style="color:#ddd;">${msg}</span>`;
+        
+		logArea.appendChild(div);
+
+        while (logArea.children.length > MAX_LOG_LINES) {
+            logArea.removeChild(logArea.firstChild);
+        }
+
+        logArea.scrollTop = logArea.scrollHeight;
+    }
+
+    function clearLog() {
+        document.getElementById('commLogArea').innerHTML = '';
+    }
+	
+    function updateChartWindow() {
+        const scrollBar = document.getElementById('historyScroll');
+        let startIndex = parseInt(scrollBar.value);
+        let endIndex = startIndex + VIEW_WINDOW_SIZE;
+
+        let viewLabels = globalData.labels.slice(startIndex, endIndex);
+        let viewDatasets = [];
+        let currentFrameMin = Infinity;
+        let currentFrameMax = -Infinity;
+
+        let dynamicRadius = (viewLabels.length <= 1) ? 5 : 1;
+        let errorChannels = [];
+        const filterAnomalies = document.getElementById('filterAnomalies').checked;
+
+        Object.keys(globalData.channels).forEach((chName) => {
+            let fullData = globalData.channels[chName];
+            let slicedData = fullData.slice(startIndex, endIndex);
+			
+			let plotData = slicedData.map(v => {
+                if (v === null) return null;
+				<!-- if (v <= -273.0) return null; -->
+                if (checkAnomaly(v)) {
+                    // 這裡只負責濾掉圖表上的點，不再觸發紅條警告
+                    return filterAnomalies ? null : v;
+                }
+                return v;
+            });
+
+
+            let latestLiveVal = null;
+            for(let i=fullData.length-1; i>=0; i--) {
+                <!-- if(fullData[i] !== null&& fullData[i] > -273.0) { latestLiveVal = fullData[i]; break; } -->
+                if(fullData[i] !== null) { latestLiveVal = fullData[i]; break; }
+
+            }
+			
+			// 【新增】在迴圈外，只檢查「最新一筆」數值
+            // 如果最新值是異常的，才加入錯誤列表
+            if (latestLiveVal !== null && checkAnomaly(latestLiveVal)) {
+                if (!errorChannels.includes(chName)) errorChannels.push(chName);
+            }
+            
+            let isAutoHidden = false;
+            if (filterAnomalies && latestLiveVal !== null && checkAnomaly(latestLiveVal)) {
+                isAutoHidden = true;
+            }
+
+            let isManualHidden = hiddenChannels.has(chName);
+            
+            let isStuck = false;
+            // 檢查是否超過閾值 (使用 script 開頭定義的 channelStuckCounts)
+            if (channelStuckCounts[chName] && channelStuckCounts[chName].count > stuckThreshold) {
+                isStuck = true;
+            }
+			
+            let labelText = chName; 
+            const showAddr = document.getElementById('showAddrToggle').checked;
+            if (showAddr && channelAddressMap[chName]) {
+                labelText += ` (${channelAddressMap[chName]})`;
+            }
+
+            if (latestLiveVal !== null) {
+                labelText += `: ${latestLiveVal.toFixed(2)}°C`;
+            }
+            
+            if (!isManualHidden && !isAutoHidden) {
+                plotData.forEach(v => {
+                    if (v !== null) {
+                        if (v < currentFrameMin) currentFrameMin = v;
+                        if (v > currentFrameMax) currentFrameMax = v;
+                    }
+                });
+            }		
+            
+			// 設定顏色與線條樣式
+            let color = getChannelColor(chName);
+            let borderDash = []; // 預設實線
+
+            // 如果判定為卡死/斷線，強制改變顏色與樣式
+            if (isStuck) {
+                color = '#999999';           // 變成灰色
+                borderDash = [5, 5];         // 變成虛線
+                labelText += " [斷線/NO SIGNAL]"; // 加註警語
+            }
+            <!-- let color = getChannelColor(chName); -->
+
+            viewDatasets.push({
+                chName: chName, 
+                label: labelText,
+                data: plotData, 
+                borderColor: color,
+                backgroundColor: color,
+                borderWidth: 2,
+				borderDash: borderDash,   // 套用虛線
+                tension: 0.1,
+                pointRadius: dynamicRadius, 
+                pointHoverRadius: 6,
+                spanGaps: false, 
+                hidden: isManualHidden,
+                isAnomalyHidden: isAutoHidden
+            });
+        });
+
+        const errorBanner = document.getElementById('errorBanner');
+        const errorMessage = document.getElementById('errorMessage');
+        if (errorChannels.length > 0) {
+            errorBanner.style.display = 'flex';
+            let uniqueErrors = [...new Set(errorChannels)];
+            errorMessage.textContent = `偵測到異常: ${uniqueErrors.join(', ')}`;
+        } else {
+            errorBanner.style.display = 'none';
+        }
+
+        historyChart.data.labels = viewLabels;
+        historyChart.data.datasets = viewDatasets;
+
+        const autoScale = document.getElementById('autoScale').checked;
+        if (autoScale && currentFrameMin !== Infinity) {
+            historyChart.options.scales.y.min = currentFrameMin - 0.1;
+            historyChart.options.scales.y.max = currentFrameMax + 0.1;
+        } else if (!autoScale) {
+            historyChart.options.scales.y.min = parseFloat(document.getElementById('yMin').value);
+            historyChart.options.scales.y.max = parseFloat(document.getElementById('yMax').value);
+        }
+        historyChart.update('none');
+    }
+
+
+    // ===========================================
+    //   LTC2983 Configuration Logic (New)
+    // ===========================================
+
+    // 1. 載入設定 (已升級: 傳遞 params)
+    function loadLTCConfigRows() {
+        const saved = localStorage.getItem('stm32_ltc_config_rows');
+        if (saved) {
+            try {
+                const data = JSON.parse(saved);
+                if (Array.isArray(data) && data.length > 0) {
+                    // [修改] 傳入 item.params
+                    data.forEach(item => addLTCConfigRow(item.dev, item.ch, item.type, item.params));
+                    return;
+                }
+            } catch (e) {}
+        }
+        // 預設加一列
+        addLTCConfigRow(1, 1, 0);
+    }
+
+   // 2. 儲存設定 (已升級: 儲存所有進階參數)
+    function saveLTCConfigRows() {
+        const rows = document.querySelectorAll('#ltcConfigRowsContainer .config-row');
+        const dataToSave = [];
+        
+        rows.forEach(row => {
+            // 基本參數
+            const dev = row.querySelector('.row-dev-select').value;
+            const ch = row.querySelector('.row-ch-select').value;
+            const type = row.querySelector('.row-type-select').value;
+            
+            // 進階參數 (Params) - 把每個欄位都抓出來存
+            const params = {};
+            
+            // 輔助函式
+            const getChk = (sel) => { const el = row.querySelector(sel); return el ? el.checked : false; };
+            const getVal = (sel) => { const el = row.querySelector(sel); return el ? el.value : "0"; };
+
+            // Thermocouple
+            params.tc_se = getChk('.chk-tc-se');
+            params.tc_oc = getChk('.chk-tc-oc');
+            params.tc_curr = getVal('.sel-tc-curr');
+            params.tc_cj = getVal('.sel-tc-cj');
+
+            // Diode
+            params.diode_se = getChk('.chk-diode-se');
+            params.diode_3r = getChk('.chk-diode-3r');
+            params.diode_avg = getChk('.chk-diode-avg');
+            params.diode_curr = getVal('.sel-diode-curr');
+
+            // RTD
+            params.rtd_wires = getVal('.sel-rtd-wires');
+            params.rtd_curr = getVal('.sel-rtd-curr');
+            params.rtd_curve = getVal('.sel-rtd-curve');
+
+            dataToSave.push({ dev, ch, type, params });
+        });
+        
+        localStorage.setItem('stm32_ltc_config_rows', JSON.stringify(dataToSave));
+    }
+
+    // 3. 新增一列 (LTC2983)
+    function addLTCConfigRow(defDev = null, defCh = null, defType = null, defParams = null) {
+        const container = document.getElementById('ltcConfigRowsContainer');
+        const rowId = 'ltc-row-' + Date.now() + Math.random().toString(36).substr(2, 9);
+
+        // 自動遞增邏輯 (保持不變)
+        if (defDev === null) {
+            const rows = container.querySelectorAll('.row-ch-select');
+            if (rows.length > 0) {
+                const lastRow = rows[rows.length-1].closest('.config-row');
+                defDev = lastRow.querySelector('.row-dev-select').value;
+                let lastCh = parseInt(lastRow.querySelector('.row-ch-select').value);
+                defCh = (lastCh % 20) + 1; 
+                defType = lastRow.querySelector('.row-type-select').value;
+            } else { 
+                defDev = 1; defCh = 1; defType = 0; 
+            }
+        }
+
+        // 產生冷接點選項的輔助函式
+        const generateCJOptions = () => {
+            let opts = '<option value="0">None</option>';
+            for(let i=1; i<=20; i++) {
+                opts += `<option value="${i}" ${i==20?'selected':''}>Ch ${i}</option>`;
+            }
+            return opts;
+        };
+
+        const div = document.createElement('div');
+        div.className = 'config-row';
+        div.id = rowId;
+        
+        div.innerHTML = `
+            <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                <label>Device: 
+                    <select class="row-dev-select" style="width:40px;">
+                        <option value="1" ${defDev==1?'selected':''}>1</option>
+                        <option value="2" ${defDev==2?'selected':''}>2</option>
+                    </select>
+                </label>
+                <label>CH: 
+                    <select class="row-ch-select" style="width:45px;">
+                        ${generateLTCChannelOptions(defCh)}
+                    </select>
+                </label>
+                <label>Type:
+                    <select class="row-type-select" onchange="updateRowParams('${rowId}'); updateConfigHexPreview('${rowId}')" style="width: auto; min-width: 120px; max-width: 200px;">
+                        ${generateLTCTypeOptions(defType)}
+                    </select>
+                </label>
+
+                <div id="params-${rowId}" class="params-container" style="visibility:hidden;">
+                    
+                    <span class="p-tc" style="display:none; align-items:center; gap:12px;">
+                        <label class="param-label" title="Single-Ended Mode"><input type="checkbox" class="chk-tc-se" checked onchange="updateConfigHexPreview('${rowId}')">Single-Ended</label>
+                        <label class="param-label" title="Open Circuit Detection"><input type="checkbox" class="chk-tc-oc" checked onchange="updateConfigHexPreview('${rowId}')">Open Ckt Detect</label>
+                        
+                        <div style="display:flex; align-items:center; gap:2px;">
+                            <span style="font-size:11px; color:#aaa;">OC Curr:</span>
+                            <select class="sel-tc-curr" onchange="updateConfigHexPreview('${rowId}')" style="font-size:12px; padding:0;">
+                                <option value="0">10uA</option><option value="1">100uA</option><option value="2">500uA</option><option value="3">1mA</option>
+                            </select>
+                        </div>
+                        
+                        <div style="display:flex; align-items:center; gap:2px; border-left:1px solid #666; padding-left:8px; margin-left:4px;">
+                            <span style="font-size:11px; color:#aaa;">Cold Junc:</span>
+                            <select class="sel-tc-cj" onchange="updateConfigHexPreview('${rowId}')" style="font-size:12px; width:60px; padding:0;">
+                                ${generateCJOptions()}
+                            </select>
+                        </div>
+                    </span>
+
+                    <span class="p-diode" style="display:none; align-items:center; gap:12px;">
+                        <label class="param-label" title="Single-Ended Mode"><input type="checkbox" class="chk-diode-se" checked onchange="updateConfigHexPreview('${rowId}')">Single-Ended</label>
+                        <label class="param-label" title="Three Reading Mode"><input type="checkbox" class="chk-diode-3r" checked onchange="updateConfigHexPreview('${rowId}')">3-Reading</label>
+                        <label class="param-label" title="Average Mode"><input type="checkbox" class="chk-diode-avg" checked onchange="updateConfigHexPreview('${rowId}')">Average</label>
+                        
+                        <div style="display:flex; align-items:center; gap:2px;">
+                            <span style="font-size:11px; color:#aaa;">Curr:</span>
+                            <select class="sel-diode-curr" onchange="updateConfigHexPreview('${rowId}')" style="font-size:12px; padding:0;">
+                                <option value="0">10uA</option><option value="1" selected>20uA</option><option value="2">40uA</option><option value="3">80uA</option>
+                            </select>
+                        </div>
+                    </span>
+
+                    <span class="p-rtd" style="display:none; align-items:center; gap:10px;">
+                        <select class="sel-rtd-wires" onchange="updateConfigHexPreview('${rowId}')" style="font-size:12px; padding:0;">
+                            <option value="0">2-Wire</option><option value="1">3-Wire</option><option value="2">4-Wire</option><option value="3">4-Wire Kelvin</option>
+                        </select>
+                        <select class="sel-rtd-curr" onchange="updateConfigHexPreview('${rowId}')" style="font-size:12px; padding:0;">
+                            <option value="2">10uA</option><option value="4">50uA</option><option value="6" selected>100uA</option><option value="8">500uA</option><option value="12">1mA</option>
+                        </select>
+                        <select class="sel-rtd-curve" onchange="updateConfigHexPreview('${rowId}')" style="font-size:12px; padding:0;">
+                            <option value="0">European</option><option value="1">American</option><option value="2">Japanese</option><option value="3">ITS-90</option>
+                        </select>
+                    </span>
+
+                    <span id="hex-${rowId}" class="hex-preview" style="margin-left:auto;">0x00</span>
+                </div>
+
+                <button class="btn-config btn-ltc-row-set" onclick="setSingleLTCRow('${rowId}')" ${isConnected ? '' : 'disabled'} style="background:#17a2b8;">Set</button>            
+                <button class="btn-remove" onclick="removeLTCConfigRow('${rowId}')">-</button>
+            </div>
+        `;
+        
+		// =========================================================
+        // [新增] 還原進階參數 (如果有的話)
+        // =========================================================
+        if (defParams) {
+            const setChk = (sel, val) => { const el = div.querySelector(sel); if(el) el.checked = val; };
+            const setVal = (sel, val) => { const el = div.querySelector(sel); if(el) el.value = val; };
+
+            // Thermocouple
+            if (defParams.tc_se !== undefined) setChk('.chk-tc-se', defParams.tc_se);
+            if (defParams.tc_oc !== undefined) setChk('.chk-tc-oc', defParams.tc_oc);
+            if (defParams.tc_curr !== undefined) setVal('.sel-tc-curr', defParams.tc_curr);
+            if (defParams.tc_cj !== undefined) setVal('.sel-tc-cj', defParams.tc_cj);
+
+            // Diode
+            if (defParams.diode_se !== undefined) setChk('.chk-diode-se', defParams.diode_se);
+            if (defParams.diode_3r !== undefined) setChk('.chk-diode-3r', defParams.diode_3r);
+            if (defParams.diode_avg !== undefined) setChk('.chk-diode-avg', defParams.diode_avg);
+            if (defParams.diode_curr !== undefined) setVal('.sel-diode-curr', defParams.diode_curr);
+
+            // RTD
+            if (defParams.rtd_wires !== undefined) setVal('.sel-rtd-wires', defParams.rtd_wires);
+            if (defParams.rtd_curr !== undefined) setVal('.sel-rtd-curr', defParams.rtd_curr);
+            if (defParams.rtd_curve !== undefined) setVal('.sel-rtd-curve', defParams.rtd_curve);
+        }
+		
+        container.appendChild(div);
+        updateRowParams(rowId);
+        updateConfigHexPreview(rowId); // 初始化計算
+        
+        div.querySelectorAll('select, input').forEach(s => s.addEventListener('change', saveLTCConfigRows));
+        saveLTCConfigRows();
+    }
+	
+	// [新增] 根據選擇的 Type，顯示/隱藏對應的參數設定
+    function updateRowParams(rowId) {
+        const row = document.getElementById(rowId);
+        if (!row) return;
+
+        const typeSelect = row.querySelector('.row-type-select');
+        const val = parseInt(typeSelect.value);
+
+        // 取得三個區域
+        const pTC = row.querySelector('.p-tc');
+        const pDiode = row.querySelector('.p-diode');
+        const pRTD = row.querySelector('.p-rtd');
+        const container = row.querySelector('.params-container');
+
+        // 先全部隱藏
+        pTC.style.display = 'none';
+        pDiode.style.display = 'none';
+        pRTD.style.display = 'none';
+        container.style.visibility = 'visible'; // 預設顯示容器
+
+        // 判斷邏輯 (依據 Datasheet 定義)
+        if (val >= 1 && val <= 9) {
+            // Thermocouple (Type 1~9)
+            pTC.style.display = 'flex';
+        } 
+        else if (val >= 10 && val <= 18) {
+            // RTD (Type 10~18)
+            pRTD.style.display = 'flex';
+        }
+        else if (val === 28) {
+            // Diode (Type 28)
+            pDiode.style.display = 'flex';
+        }
+        else {
+            // NONE or Other -> 隱藏整個容器讓畫面乾淨
+            container.style.visibility = 'hidden';
+        }
+    }
+	
+    // 輔助: 產生 1~20 的選項
+    function generateLTCChannelOptions(selected) {
+        let opts = '';
+        for(let i=1; i<=20; i++) {
+            opts += `<option value="${i}" ${i==selected ? 'selected' : ''}>${i}</option>`;
+        }
+        return opts;
+    }
+
+    // 4. 移除一列
+    function removeLTCConfigRow(rowId) {
+        const row = document.getElementById(rowId);
+        if (row) {
+            row.remove();
+            saveLTCConfigRows();
+        }
+    }
+	
+	async function setSingleLTCRow(rowId) {
+        const row = document.getElementById(rowId);
+        if (!row) return;
+
+        const dev = row.querySelector('.row-dev-select').value;
+        const ch = row.querySelector('.row-ch-select').value;
+        const type = parseInt(row.querySelector('.row-type-select').value);
+
+        // ============================================
+        // 計算 Config Word (對應 C 語言 Macros)
+        // ============================================
+        let configWord = 0;
+
+        if (type === 28) { // Diode
+            // 讀取 Checkbox 狀態
+            const isSE = row.querySelector('.chk-diode-se').checked;
+            const is3Read = row.querySelector('.chk-diode-3r').checked;
+            const isAvg = row.querySelector('.chk-diode-avg').checked;
+            const currIdx = parseInt(row.querySelector('.sel-diode-curr').value);
+
+            // Bit 26: Single-Ended
+            if (isSE) configWord |= (1 << 26);
+            // Bit 25: 3-Reading
+            if (is3Read) configWord |= (1 << 25);
+            // Bit 24: Average
+            if (isAvg) configWord |= (1 << 24);
+            // Bits 23-22: Excitation Current
+            configWord |= (currIdx << 22);
+        }
+        else if (type >= 1 && type <= 9) { // Thermocouple
+            const isSE = row.querySelector('.chk-tc-se').checked;
+            const isOC = row.querySelector('.chk-tc-oc').checked;
+            
+            // Bit 26: Single-Ended
+            if (isSE) configWord |= (1 << 26);
+            // Bit 23: Open Circuit Detect
+            if (isOC) configWord |= (1 << 23);
+            // 預設 OC Current 10uA (00) -> 這裡沒做選項，預設為 0
+        }
+        else if (type >= 10 && type <= 18) { // RTD
+            const wires = parseInt(row.querySelector('.sel-rtd-wires').value);
+            const curr = parseInt(row.querySelector('.sel-rtd-curr').value);
+            const curve = parseInt(row.querySelector('.sel-rtd-curve').value);
+
+            // Bits 21-20: Num Wires
+            configWord |= (wires << 20);
+            // Bits 19-18: Rotation (預設 0: No Rotation)
+            // Bits 17-14: Excitation Current
+            configWord |= (curr << 14);
+            // Bits 13-12: Curve
+            configWord |= (curve << 12);
+        }
+
+        // ============================================
+        // 發送指令
+        // 新格式: CMD:SET_LTC <dev> <ch> <type> <config>
+        // 注意: config 使用 Hex 傳送比較安全
+        // ============================================
+        const configHex = configWord.toString(16).toUpperCase();
+        
+        // 為了相容舊版，如果 config 為 0 (例如 None)，可以不傳或傳 0
+        const cmd = `CMD:SET_LTC ${dev} ${ch} ${type} ${configHex}`;
+        
+        console.log("Sending Config:", cmd); // Debug 用
+        await sendStringCommand(cmd);
+    }
+	
+   
+    // [修正版] 回傳 { config: 基礎設定, data: 輔助數據, target: 預覽值 }
+    function getLTCConfigWord(rowId) {
+        const row = document.getElementById(rowId);
+        if (!row) return { config: 0, data: 0, target: 0 };
+        
+        const type = parseInt(row.querySelector('.row-type-select').value);
+        let config = 0; // 對應 struct.sensor_config
+        let data = 0;   // 對應 struct.excitation_current 或 cold_junction_chan
+        let target = 0; // 預覽用的最終 Chip 值
+
+        // =================================================================
+        // Case 1: Diode
+        // Config: SE, 3-Read, Avg
+        // Data: Excitation Current
+        // =================================================================
+        if (type === 28) { 
+            // 1. Config (Bit 0-2) -> C Code: << 24
+            if (row.querySelector('.chk-diode-se').checked) config |= (1 << 2);
+            if (row.querySelector('.chk-diode-3r').checked) config |= (1 << 1);
+            if (row.querySelector('.chk-diode-avg').checked) config |= (1 << 0);
+            
+            // 2. Data (Excitation Current) -> C Code: 直接賦值 (0~3)
+            data = parseInt(row.querySelector('.sel-diode-curr').value);
+
+            // 3. 計算預覽 Target
+            // Config << 24
+            target |= ((config & 0x07) << 24);
+            // Current << 22 (Datasheet定義)
+            target |= ((data & 0x03) << 22);
+        }
+        
+        // =================================================================
+        // Case 2: Thermocouple
+        // Config: SE, OC Det, OC Curr
+        // Data: Cold Junction Channel
+        // =================================================================
+        else if (type >= 1 && type <= 9) { 
+            // 1. Config (Bit 0-3) -> C Code: << 18
+            // Bit 21 (SE) -> 21-18=3
+            if (row.querySelector('.chk-tc-se').checked) config |= (1 << 3);
+            // Bit 20 (OC Det) -> 20-18=2
+            if (row.querySelector('.chk-tc-oc').checked) config |= (1 << 2);
+            // Bit 18-19 (OC Curr) -> 18-18=0
+            const ocCurr = parseInt(row.querySelector('.sel-tc-curr').value);
+            config |= (ocCurr << 0);
+
+            // 2. Data (Cold Junction Ch) -> C Code: 直接賦值 (0~20)
+            data = parseInt(row.querySelector('.sel-tc-cj').value);
+
+            // 3. 計算預覽 Target
+            // Config << 18
+            target |= (config << 18);
+            // Cold Junction << 22 (Datasheet定義)
+            target |= (data << 22);
+        }
+        
+        // =================================================================
+        // Case 3: RTD
+        // Config: All in one
+        // Data: 0 (或 Rsense Ch)
+        // =================================================================
+        else if (type >= 10 && type <= 18) {
+            const wires = parseInt(row.querySelector('.sel-rtd-wires').value);
+            const curr = parseInt(row.querySelector('.sel-rtd-curr').value);
+            const curve = parseInt(row.querySelector('.sel-rtd-curve').value);
+
+            config |= (wires << 20);
+            config |= (curr << 14);
+            config |= (curve << 12);
+            
+            target = config; // RTD 通常沒有額外位移
+            data = 0; // 暫時無輔助數據
+        }
+
+        return { config: config, data: data, target: (target >>> 0) };
+    }
+
+	function updateConfigHexPreview(rowId) {
+        const result = getLTCConfigWord(rowId);
+        const hexSpan = document.getElementById(`hex-${rowId}`);
+        
+        if (hexSpan) {
+            const configHex = '0x' + result.config.toString(16).toUpperCase();
+            const dataHex = '0x' + result.data.toString(16).toUpperCase();
+            const targetHex = '0x' + result.target.toString(16).toUpperCase().padStart(8, '0');
+            
+            hexSpan.innerHTML = `
+                <div style="font-size:10px; color:#aaa;">CMD params:</div>
+                <div><span class="hex-label">Cfg:</span>${configHex}</div>
+                <div><span class="hex-label">Dat:</span>${dataHex}</div>
+                <div style="border-top:1px solid #444; margin-top:2px; padding-top:2px;">
+                    <span class="hex-label" style="color:#0f0;">Chip:</span>${targetHex}
+                </div>
+            `;
+        }
+    }
+
+    async function setSingleLTCRow(rowId) {
+        const row = document.getElementById(rowId);
+        if (!row) return;
+
+        const dev = row.querySelector('.row-dev-select').value;
+        const ch = row.querySelector('.row-ch-select').value;
+        const type = parseInt(row.querySelector('.row-type-select').value);
+
+        // 取得計算結果
+        const result = getLTCConfigWord(rowId);
+        
+        // 轉成 Hex 字串
+        const configHex = result.config.toString(16).toUpperCase();
+        const dataHex = result.data.toString(16).toUpperCase();
+        
+        // [修改] 指令格式增加第五個參數: Data
+        // 例如: CMD:SET_LTC 1 5 28 7 1 (Device 1, Ch 5, Diode, Config=7, Curr=1)
+        const cmd = `CMD:SET_LTC ${dev} ${ch} ${type} ${configHex} ${dataHex}`;
+        
+        console.log("Sending Config:", cmd);
+        await sendStringCommand(cmd);
+    }
+	
+	// 6. 設定全部 (Set All) - [已修正] 改為呼叫 setSingleLTCRow 以包含進階參數
+    async function setAllLTCRows() {
+        const rows = document.querySelectorAll('#ltcConfigRowsContainer .config-row');
+        if (rows.length === 0) return;
+
+        for (const row of rows) {
+            // [修正重點]
+            // 原本是手動組字串: const cmd = `CMD:SET_LTC ${dev} ${ch} ${type}`;
+            // 現在改為: 直接呼叫 setSingleLTCRow(row.id)
+            // 這樣就會自動去抓 checkbox 狀態、計算 Hex Config 並傳送正確指令
+            
+            await setSingleLTCRow(row.id);
+            
+            // 保持間隔，避免塞爆 USB
+            await new Promise(r => setTimeout(r, 20)); 
+        }
+
+        // [修改重點] 讀取 "跳過確認" 的勾選狀態
+        const chkSkip = document.getElementById('skipDisableConfirmLTC');
+        const skipConfirm = chkSkip ? chkSkip.checked : false;
+
+        // 如果 "沒有勾選跳過"，才顯示完成提示 (Alert)
+        if (!skipConfirm) {
+            alert(`已發送 ${rows.length} 組 LTC 配置指令！`);
+        }
+    }
+	
+	// 【新增】關閉所有 LTC 通道
+    async function disableAllLTCChannels() {
+        if (!isConnected) {
+            alert("請先連線 (Connect)！");
+            return;
+        }
+        
+        if (window.isBulkDisabling) return; 
+
+        // 1. 取得選項狀態
+        // 使用安全寫法，防止找不到元素報錯
+        const chkClear = document.getElementById('clearDataOnDisableLTC');
+        const clearData = chkClear ? chkClear.checked : false;
+        
+        const chkSkip = document.getElementById('skipDisableConfirmLTC');
+        const skipConfirm = chkSkip ? chkSkip.checked : false;
+
+        // 2. 確認視窗邏輯 (修正版)
+        // 如果 "沒有勾選跳過" (skipConfirm 為 false)，才跳出詢問
+        if (!skipConfirm) {
+            if (!confirm("確定要關閉所有 LTC2983 通道嗎？")) return;
+        }
+
+        window.isBulkDisabling = true; 
+
+        try {
+            const allKeys = Object.keys(globalData.channels);
+            const ltcKeys = allKeys.filter(k => k.startsWith('LTC'));
+            
+            if (ltcKeys.length === 0) {
+                // 沒有通道也沒關係，只是解鎖並返回
+                window.isBulkDisabling = false;
+                return;
+            }
+
+            for (const chKey of ltcKeys) {
+                const parts = chKey.split('_');
+                let dev = 1, ch = 1;
+                
+                if (parts.length === 3) {
+                    dev = parts[1];
+                    ch = parts[2];
+                } else if (parts.length === 2) {
+                    dev = 1; 
+                    ch = parts[1];
+                }
+
+                await sendStringCommand(`CMD:SET_LTC ${dev} ${ch} 0`);
+                
+                if (clearData) {
+                    delete globalData.channels[chKey];
+                    hiddenChannels.delete(chKey);
+                }
+                
+                await new Promise(r => setTimeout(r, 20));
+            }
+            
+            updateChartWindow();
+            
+        } catch (error) {
+            console.error("Disable All LTC Error:", error);
+            alert("關閉通道時發生錯誤：" + error.message);
+        } finally {
+            window.isBulkDisabling = false; 
+        }
+    }
+	
+    // 7. 批量套用 Type
+    function applyBatchLTCType() {
+        const val = document.getElementById('batchLtcTypeSelect').value;
+        const selects = document.querySelectorAll('#ltcConfigRowsContainer .row-type-select');
+        selects.forEach(s => s.value = val);
+        saveLTCConfigRows();
+    }
+	
+
+    window.toggleBox = function(elementId) {
+        document.getElementById(elementId).classList.toggle('collapsed');
+    }
+
+    window.toggleManualInput = function() {
+        const auto = document.getElementById('autoScale').checked;
+        document.getElementById('manualInput').style.display = auto ? 'none' : 'inline-block';
+        if(!auto) forceUpdateChart();
+    }
+
+    window.forceUpdateChart = function() { updateChartWindow(); }
+
+    window.clearCharts = function() {
+        globalData.labels = [];
+        globalData.channels = {};
+        globalSampleCount = 0;
+        isAutoScroll = true;
+        hiddenChannels.clear();
+        lastReceivedData = [];
+        const scrollBar = document.getElementById('historyScroll');
+        scrollBar.value = 0;
+        scrollBar.max = 0;
+        updateScrollbarState();
+        updateChartWindow();
+        updateBarChart([]);
+    }
+	// ===========================================
+    //   [新增] 設定檔 匯出 / 匯入 功能
+    // ===========================================
+
+// 1. 匯出設定 (完整版：包含 LTC, TMP117, Anomaly, Colors, System)
+    function exportSettings() {
+        // 確保目前的 UI 設定都已儲存到 LocalStorage
+        saveLTCConfigRows();
+        saveConfigRows();     // TMP117
+        saveAnomalyRules();
+        saveBufferSettings();
+
+        const settings = {
+            version: "4.2", // 升級版本號
+            timestamp: new Date().toISOString(),
+            
+            // 1. LTC2983 設定
+            ltc_config: JSON.parse(localStorage.getItem('stm32_ltc_config_rows') || "[]"),
+            
+            // 2. TMP117 設定
+            tmp117_config: JSON.parse(localStorage.getItem('stm32_config_rows') || "[]"),
+            
+            // 3. 異常偵測規則
+            anomaly_config: JSON.parse(localStorage.getItem('stm32_anomaly_config') || "{}"),
+            
+            // 4. 通道顏色
+            colors: JSON.parse(localStorage.getItem('stm32_channel_colors') || "{}"),
+            
+            // 5. 系統參數 (間隔、Buffer、Log、Stuck)
+            system: {
+                tx_interval: localStorage.getItem('stm32_tx_interval') || "1000",
+                buffer_settings: JSON.parse(localStorage.getItem('stm32_buffer_settings') || "{}"),
+                log_lines: localStorage.getItem('stm32_log_lines') || "100",
+                stuck_threshold: localStorage.getItem('stm32_stuck_threshold') || "5"
+            }
+        };
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(settings, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        
+        // 檔名加上時間戳記
+        const dateStr = new Date().toISOString().slice(0,19).replace(/:/g,"-");
+        downloadAnchor.setAttribute("download", `STM32_Full_Config_${dateStr}.json`);
+        
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+    }
+
+    // 2. 觸發匯入 (點擊隱藏的 input)
+    function triggerImport() {
+        document.getElementById('importFile').click();
+    }
+
+   // 3. 執行匯入 (完整版)
+    function importSettings(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const settings = JSON.parse(e.target.result);
+                
+                if (!confirm("匯入將會覆蓋目前所有的設定 (包含顏色與規則)，確定要繼續嗎？")) {
+                    input.value = '';
+                    return;
+                }
+
+                // --- 1. 還原 LTC2983 設定 ---
+                if (settings.ltc_config) {
+                    localStorage.setItem('stm32_ltc_config_rows', JSON.stringify(settings.ltc_config));
+                    // 清空現有容器並重新載入
+                    document.getElementById('ltcConfigRowsContainer').innerHTML = '';
+                    loadLTCConfigRows(); 
+                }
+
+                // --- 2. 還原 TMP117 設定 ---
+                if (settings.tmp117_config) {
+                    localStorage.setItem('stm32_config_rows', JSON.stringify(settings.tmp117_config));
+                    document.getElementById('configRowsContainer').innerHTML = '';
+                    loadConfigRows();
+                }
+
+                // --- 3. 還原異常偵測規則 ---
+                if (settings.anomaly_config) {
+                    localStorage.setItem('stm32_anomaly_config', JSON.stringify(settings.anomaly_config));
+                    loadAnomalyRules();
+                }
+
+                // --- 4. 還原顏色設定 ---
+                if (settings.colors) {
+                    localStorage.setItem('stm32_channel_colors', JSON.stringify(settings.colors));
+                    channelColors = settings.colors; // 更新記憶體變數
+                }
+
+                // --- 5. 還原系統參數 ---
+                if (settings.system) {
+                    if (settings.system.tx_interval) {
+                        localStorage.setItem('stm32_tx_interval', settings.system.tx_interval);
+                        document.getElementById('cfg_interval').value = settings.system.tx_interval;
+                    }
+                    if (settings.system.buffer_settings) {
+                        localStorage.setItem('stm32_buffer_settings', JSON.stringify(settings.system.buffer_settings));
+                        loadBufferSettings();
+                    }
+                    if (settings.system.log_lines) {
+                        localStorage.setItem('stm32_log_lines', settings.system.log_lines);
+                        loadLogSettings();
+                    }
+                    if (settings.system.stuck_threshold) {
+                        localStorage.setItem('stm32_stuck_threshold', settings.system.stuck_threshold);
+                        stuckThreshold = parseInt(settings.system.stuck_threshold);
+                        const el = document.getElementById('stuckThresholdInput');
+                        if (el) el.value = stuckThreshold;
+                    }
+                }
+
+                alert("完整設定匯入成功！\n\n注意：硬體參數 (Set All) 需要手動點擊按鈕才會發送到 STM32。");
+
+            } catch (err) {
+                console.error(err);
+                alert("匯入失敗：檔案格式錯誤或損毀");
+            }
+            // 清空 input，確保下次選同個檔案也能觸發
+            input.value = '';
+        };
+        reader.readAsText(file);
+    }
+	
+	// ===========================================
+    //   [整合版] 自動存檔系統 (CSV + Image)
+    // ===========================================
+    
+    let autoSaveBuffer = [];
+    let logDirHandle = null;
+
+    // --- 1. 設定讀寫 ---
+    function loadAutoSaveSettings() {
+        const count = localStorage.getItem('stm32_auto_save_count');
+        const csvEn = localStorage.getItem('stm32_auto_csv_enable');
+        const imgEn = localStorage.getItem('stm32_auto_img_enable');
+
+        if (count) document.getElementById('cfg_auto_save_count').value = count;
+        if (csvEn === 'true') document.getElementById('cfg_auto_csv_enable').checked = true;
+        if (imgEn === 'true') document.getElementById('cfg_auto_img_enable').checked = true;
+        
+        updateSaveProgressUI();
+    }
+
+    function saveAutoSaveSettings() {
+        const count = document.getElementById('cfg_auto_save_count').value;
+        const csvEn = document.getElementById('cfg_auto_csv_enable').checked;
+        const imgEn = document.getElementById('cfg_auto_img_enable').checked;
+
+        localStorage.setItem('stm32_auto_save_count', count);
+        localStorage.setItem('stm32_auto_csv_enable', csvEn);
+        localStorage.setItem('stm32_auto_img_enable', imgEn);
+        
+        // 如果兩者都關閉，清空 Buffer
+        if (!csvEn && !imgEn && autoSaveBuffer.length > 0) {
+            autoSaveBuffer = [];
+            updateSaveProgressUI();
+        }
+    }
+
+    // --- 2. 核心觸發 (入口) ---
+    function handleAutoSave(timestamp, dataMap) {
+        const csvEn = document.getElementById('cfg_auto_csv_enable').checked;
+        const imgEn = document.getElementById('cfg_auto_img_enable').checked;
+
+        if (!csvEn && !imgEn) return;
+
+        const targetCount = parseInt(document.getElementById('cfg_auto_save_count').value) || 1000;
+
+        // 存入 Buffer
+        let row = { Time: timestamp };
+        Object.assign(row, dataMap);
+        autoSaveBuffer.push(row);
+        updateSaveProgressUI();
+
+        // 檢查是否達標
+        if (autoSaveBuffer.length >= targetCount) {
+            performAutoSave(); // 執行存檔
+        }
+    }
+
+    function updateSaveProgressUI() {
+        const el = document.getElementById('save_progress');
+        if(el) {
+            const target = document.getElementById('cfg_auto_save_count').value;
+            el.innerText = `(${autoSaveBuffer.length}/${target})`;
+        }
+    }
+
+    // --- 3. 執行存檔 (CSV & Image) ---
+    async function performAutoSave() {
+        const csvEn = document.getElementById('cfg_auto_csv_enable').checked;
+        const imgEn = document.getElementById('cfg_auto_img_enable').checked;
+        
+        // 取得當前時間做檔名
+        const now = new Date();
+        const fileTimeStr = now.getFullYear() +
+                        ("0" + (now.getMonth() + 1)).slice(-2) +
+                        ("0" + now.getDate()).slice(-2) + "_" +
+                        ("0" + now.getHours()).slice(-2) +
+                        ("0" + now.getMinutes()).slice(-2) +
+                        ("0" + now.getSeconds()).slice(-2);
+
+        // A. 儲存 CSV
+        if (csvEn && autoSaveBuffer.length > 0) {
+            await saveCSV(fileTimeStr, [...autoSaveBuffer]); // 傳副本
+        }
+
+        // B. 儲存圖片 (截取當下圖表)
+        if (imgEn) {
+            await saveChartImage(fileTimeStr);
+        }
+
+        // C. 清空 Buffer
+        autoSaveBuffer = [];
+        updateSaveProgressUI();
+    }
+
+    // --- 4. CSV 存檔實作 ---
+    async function saveCSV(timeStr, buffer) {
+        // 產生 CSV 內容
+        let headers = new Set();
+        headers.add("Time");
+        buffer.forEach(row => Object.keys(row).forEach(k => headers.add(k)));
+        const headerArr = Array.from(headers);
+        let csvContent = headerArr.join(",") + "\n";
+        buffer.forEach(row => {
+            csvContent += headerArr.map(h => row[h] === undefined ? "" : row[h]).join(",") + "\n";
+        });
+
+        const fileName = `STM32_Log_${timeStr}_(${buffer.length}).csv`;
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+
+        await writeToFileSystem(fileName, blob);
+    }
+
+    // --- 5. 圖片存檔實作 ---
+    async function saveChartImage(timeStr) {
+        // 取得 Chart Canvas
+        const canvas = document.getElementById('historyChart'); 
+        if (!canvas) return;
+
+        // 轉成 Blob (PNG)
+        canvas.toBlob(async (blob) => {
+            const fileName = `STM32_Chart_${timeStr}.png`;
+            await writeToFileSystem(fileName, blob);
+        }, 'image/png');
+    }
+
+    // --- 6. 統一寫入系統 (支援資料夾 / 下載) ---
+    async function writeToFileSystem(fileName, blob) {
+        // 模式 1: 直接寫入資料夾
+        if (logDirHandle) {
+            try {
+                const fileHandle = await logDirHandle.getFileHandle(fileName, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                console.log(`[Auto Save] Written: ${fileName}`);
+                return;
+            } catch (err) {
+                console.error("Write failed:", err);
+                // 失敗則跌落至下載模式
+            }
+        }
+
+        // 模式 2: 傳統下載
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+  
+
+
+	// ===========================================
+    //   [進階] 檔案系統存取 (File System Access)
+    // ===========================================
+    
+
+	// [最終版] 選擇/重連 資料夾函式 (邏輯修正：確定=重連，取消=換新)
+    async function selectLogFolder() {
+        if (!('showDirectoryPicker' in window)) {
+            alert("瀏覽器不支援，請使用 Chrome/Edge。");
+            return;
+        }
+
+        try {
+            // A. 檢查是否已有記憶的資料夾
+            if (logDirHandle) {
+                // 跳出確認視窗
+                // true (確定) => 重連
+                // false (取消) => 換新
+                const wantToReconnect = confirm(
+                    `目前記憶的資料夾為：\n📂 ${logDirHandle.name}\n\n` +
+                    `● 按下「確定」：繼續使用 (重連權限)\n` +
+                    `● 按下「取消」：更換其他資料夾`
+                );
+
+                if (wantToReconnect) {
+                    // --- 使用者選擇「重連」 ---
+                    // 檢查權限
+                    if ((await logDirHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+                        const status = await logDirHandle.requestPermission({ mode: 'readwrite' });
+                        if (status !== 'granted') {
+                            // 權限被拒，詢問是否換新
+                            if(confirm("重連失敗 (權限被拒)。是否直接選擇新資料夾？")) {
+                                logDirHandle = null; // 清空，進入 B 流程
+                            } else {
+                                return; // 放棄操作
+                            }
+                        }
+                    }
+                } else {
+                    // --- 使用者選擇「取消」(即換新) ---
+                    logDirHandle = null; // 清空舊紀錄，強制進入 B 流程
+                }
+            }
+
+            // B. 如果沒有 handle (或是剛剛按了取消要換新)，則開啟選擇視窗
+            if (!logDirHandle) {
+                // 開啟系統視窗選資料夾
+                logDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                
+                // ★ 選好後，存入 IndexedDB 更新記憶
+                await saveDirectoryHandle(logDirHandle);
+            }
+
+            // C. 更新介面狀態 (確認最終權限)
+            if ((await logDirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') {
+                const btn = document.getElementById('btn_select_folder');
+                btn.style.backgroundColor = '#28a745';
+                btn.style.color = 'white';
+                btn.style.border = 'none';
+                btn.innerText = `📂 已就緒: ${logDirHandle.name}`;
+                
+                // 只有在真的「新選」的時候才跳 Alert
+                if (!window.isRestoring) { 
+                    alert(`資料夾 "${logDirHandle.name}" 設定成功！\n之後將自動寫入此位置。`);
+                }
+                window.isRestoring = false;
+            }
+
+        } catch (err) {
+            // 使用者在選擇視窗按取消 (不需報錯)
+            console.log("Folder selection cancelled:", err);
+        }
+    }
+	// ===========================================
+    //   [新增] IndexedDB 資料庫 (用於記憶資料夾)
+    // ===========================================
+    const DB_NAME = 'STM32_Logger_DB';
+    const STORE_NAME = 'dir_handles';
+
+    function openDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, 1);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME);
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async function saveDirectoryHandle(handle) {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(handle, 'log_folder');
+    }
+
+    async function getDirectoryHandle() {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const req = tx.objectStore(STORE_NAME).get('log_folder');
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+	// [新增] 網頁開啟時，嘗試讀取上次的資料夾
+    async function tryRestoreFolder() {
+        try {
+            const handle = await getDirectoryHandle();
+            if (handle) {
+                logDirHandle = handle;
+                window.isRestoring = true; // 標記狀態，避免彈出多餘視窗
+                
+                // 更新按鈕外觀，提示使用者點擊
+                const btn = document.getElementById('btn_select_folder');
+                btn.innerText = `📂 重連: ${handle.name}`; // 顯示上次的資料夾名稱
+                btn.title = "點擊此按鈕以恢復對上次資料夾的寫入權限";
+                btn.style.backgroundColor = '#ffc107'; // 黃色 (等待確認)
+                btn.style.color = 'black';
+                btn.style.fontWeight = 'bold';
+            }
+        } catch (e) {
+            console.log("沒有儲存的資料夾紀錄");
+        }
+    }
+    // 初始化
+    window.addEventListener('load', () => {
+        loadAutoSaveSettings();
+        if(typeof tryRestoreFolder === 'function') tryRestoreFolder();
+    });
+
+	
+</script>
+
+</body>
+</html>
