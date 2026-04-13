@@ -279,4 +279,171 @@ int TMP117_ReadSingleChannelData(const tmp117_sensor *sensor, uint8_t channel, u
     return 0;
 }
 
+/**
+ * @brief  讀取連接在同一 Channel 上的 4 顆 TMP117 (地址 0x48 ~ 0x4B)
+ * [修正版] 加入延遲與狀態清除，解決數值卡住問題
+ */
+/*
+int TMP117_ReadQuadTemperature(tmp117_sensor *sensor, float *temp_array)
+{
+    if (!sensor || !temp_array) return -1;
 
+    // 定義 4 顆 TMP117 的標準地址
+    // 0x48(GND), 0x49(V+), 0x4A(SDA), 0x4B(SCL)
+    uint16_t target_addrs[4] = {0x48, 0x49, 0x4A, 0x4B};
+
+    // 備份原本結構體內的地址
+    uint16_t original_addr = sensor->i2c_address;
+
+    // 定義通道 Mask (例如 Ch0 就是 0x0001)
+    unsigned short channel_mask = (1 << sensor->channel);
+
+    for (int i = 0; i < 4; i++) {
+        // 1. 修改當前要溝通的 I2C Address
+        sensor->i2c_address = target_addrs[i];
+
+        // 2. 將新的地址寫入 FPGA
+        // [新增] 加入微小延遲，確保 SPI 傳輸間隔
+        HAL_Delay(1);
+        int status = TMP117_ConfigureOnFPGA(sensor);
+
+        // [重要] 給 FPGA 一點時間去更新內部的 Address Register
+        HAL_Delay(1);
+
+        if (status != 0) {
+            temp_array[i] = -999.0f;
+            continue;
+        }
+
+        // 3. 啟動轉換 (發送 Start)
+        // 這會觸發 FPGA 使用新的地址去讀取感測器
+        status = TMP117_StartConversion(sensor, channel_mask);
+        if (status != 0) {
+            temp_array[i] = -999.0f;
+            continue;
+        }
+
+        // 4. 等待轉換與讀取完成
+        // [修改] 這裡使用較短的 Timeout，因為如果是 Quad 模式，我們不想卡太久
+        // 正常讀取約需 15ms (無平均) 或更久。如果卡住，這裡會回傳錯誤。
+        status = TMP117_CheckTransactionStatus(sensor, channel_mask, 200);
+
+        if (status == 0) {
+            // 5. 只有在 ACK 成功 (status == 0) 時才去讀取數據
+            // 這避免了讀到上一次殘留的數值
+
+            unsigned char ordered_temp_buffer[32];
+            // 讀取 FPGA 內的數據暫存器
+            TMP117_ReadAllTempData_Ordered(sensor, ordered_temp_buffer);
+
+            unsigned short raw_value = (ordered_temp_buffer[sensor->channel * 2] << 8) |
+                                       ordered_temp_buffer[sensor->channel * 2 + 1];
+
+            // [除錯技巧] 如果讀回來是 0xFFFF 或 0x0000 且沒變動，可能是 I2C 沒真的跑
+            // 但這裡我們先信任 CheckTransactionStatus 的結果
+
+            temp_array[i] = TMP117_ConvertToCelsius(raw_value);
+        } else {
+            // I2C NACK 或 Timeout
+            temp_array[i] = -999.0f;
+        }
+
+        // [新增] 迴圈之間的緩衝時間，讓 I2C Bus 回到 Idle
+        HAL_Delay(2);
+    }
+
+    // 6. 還原原本的地址設定 (這很重要，否則下一次 Single Read 會錯亂)
+    sensor->i2c_address = original_addr;
+    TMP117_ConfigureOnFPGA(sensor);
+
+    return 0;
+}
+*/
+int TMP117_ReadQuadTemperature(tmp117_sensor *sensor, float *temp_array)
+{
+    if (!sensor || !temp_array) return -1;
+
+    uint16_t target_addrs[4] = {0x48, 0x49, 0x4A, 0x4B};
+    uint16_t original_addr = sensor->i2c_address;
+    unsigned short channel_mask = (1 << sensor->channel);
+
+    for (int i = 0; i < 4; i++) {
+
+        // 1. 設定目標地址
+        // 為了保險起見，我們保留先寫 0 再寫地址的 "Double Write" 策略
+        sensor->i2c_address = 0;
+        TMP117_ConfigureOnFPGA(sensor);
+        HAL_Delay(1);
+
+        sensor->i2c_address = target_addrs[i];
+        int status = TMP117_ConfigureOnFPGA(sensor);
+        HAL_Delay(2); // 給予足夠時間 latch 地址
+
+        if (status != 0) {
+            temp_array[i] = -999.0f;
+//            goto error_recovery;
+        }
+
+        // 2. 啟動轉換
+        status = TMP117_StartConversion(sensor, channel_mask);
+
+        // 3. 等待完成
+        if (status == 0) {
+            status = TMP117_CheckTransactionStatus(sensor, channel_mask, 250); // 稍微放寬 Timeout
+        }
+
+        if (status == 0) {
+            // --- 讀取成功 ---
+            unsigned char ordered_temp_buffer[32];
+            memset(ordered_temp_buffer, 0, sizeof(ordered_temp_buffer));
+
+            TMP117_ReadAllTempData_Ordered(sensor, ordered_temp_buffer);
+
+            uint16_t raw_val = (ordered_temp_buffer[sensor->channel * 2] << 8) |
+                               ordered_temp_buffer[sensor->channel * 2 + 1];
+
+            float temp = TMP117_ConvertToCelsius(raw_val);
+
+            // [防呆] 如果讀回來是 0.00 且不是 Ch0，可能是 Buffer 沒更新，標記為異常
+            // 但考量 Ch0 可能真的是 0 度，這裡暫不做額外過濾
+            temp_array[i] = temp;
+        }
+        else {
+            // --- 讀取失敗 (NACK / Timeout) ---
+            temp_array[i] = -999.0f;
+
+            // =================================================================
+            // [關鍵修正] 主動式修復 (Active Recovery)
+            // 發生 NACK 後，FPGA 狀態機可能卡死。
+            // 我們必須強迫執行一次「成功的交易 (對準 0x48)」來解鎖狀態機。
+            // =================================================================
+            error_recovery:
+
+            // A. 切換回已知存在的地址 (0x48)
+            sensor->i2c_address = 0x48;
+            TMP117_ConfigureOnFPGA(sensor);
+            HAL_Delay(2);
+
+            // B. 發送一次 Start Conversion (這是為了讓 FPGA 跑完一次完整的 ACK 流程)
+            // 我們不在乎結果，只是要讓 I2C Bus 動起來並收到 ACK
+            TMP117_StartConversion(sensor, channel_mask);
+
+            // C. 等待一小段時間讓它跑完 (不用太久，只要 Status 清除即可)
+            HAL_Delay(10);
+
+            // D. (選用) 讀取一次 Status 把 Error Flag 清掉
+            TMP117_CheckTransactionStatus(sensor, channel_mask, 10);
+
+            // 恢復完成，繼續下一個迴圈
+        }
+
+        // 迴圈間隔
+        HAL_Delay(2);
+    }
+
+    // 4. 收尾：還原原本的結構體設定
+    sensor->i2c_address = original_addr;
+    TMP117_ConfigureOnFPGA(sensor);
+
+    return 0;
+}

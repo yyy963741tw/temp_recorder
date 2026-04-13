@@ -145,17 +145,6 @@
 		}
 		
 		/* 個別顏色定義 */
-		/* [新增] Quad Board 選項專用樣式 */
-		.opt-quad {
-			color: #0056b3; /* 亮色模式：深藍色，對比度高 */
-			font-weight: bold;
-		}
-		
-		/* 當 Body 有 dark-mode 類別時，自動切換為亮藍綠色 */
-		body.dark-mode .opt-quad {
-			color: #00ffff; /* 暗色模式：青色/亮藍色，在黑底上非常清楚 */
-		}
-		
 		.btn-export { background-color: #17a2b8; }
 		.btn-export:hover { background-color: #138496; }
 		
@@ -176,32 +165,7 @@
         
         /* Chart Layout */
         .charts-area { display: flex; gap: 20px; flex-wrap: nowrap; align-items: flex-start; overflow-x: auto; margin-bottom: 20px; }
-		
-		/* [修改] 小圖表卡片樣式 */
-        .mini-chart-card {
-            background: var(--bg-container);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 10px;
-            
-            /* --- [關鍵修改] 改用變數控制寬度，預設 48% (2列) --- */
-            width: var(--mini-card-width, 48%); 
-            
-            height: 250px;
-            box-shadow: var(--box-shadow);
-            box-sizing: border-box;
-            position: relative;
-            margin-bottom: 10px;
-            transition: width 0.2s ease; /* 加入過渡動畫讓切換更順滑 */
-        }
-
-        /* 手機版維持強制一列 */
-        @media (max-width: 768px) {
-            .mini-chart-card {
-                width: 100% !important;
-            }
-        }
-		
+        
         .chart-box { 
             background: var(--bg-container); 
             border: 1px solid var(--border-color); 
@@ -227,14 +191,7 @@
         .toggle-icon { font-size: 12px; transition: transform 0.2s; }
         .collapsed .toggle-icon { transform: rotate(-90deg); }
 
-        .chart-wrapper { 
-		position: relative; 
-		height: 450px; 
-		width: 100%; 
-		resize: both;      
-		overflow: hidden;      /* 必須搭配 overflow 才能顯示拖曳控制項 */
-		min-height: 300px;     /* 限制最小高度防呆 */
-		} 
+        .chart-wrapper { position: relative; height: 450px; width: 100%; } 
 
         .scroll-container { margin-top: 10px; display: flex; align-items: center; gap: 10px; color: var(--text-main); }
         input[type=range] { flex-grow: 1; cursor: pointer; }
@@ -412,22 +369,6 @@
                     <input type="checkbox" id="showAddrToggle" onchange="forceUpdateChart()"> 顯示位址
                 </label>
 
-				<div style="display: inline-flex; align-items: center; gap: 10px; margin-right: 15px; background: rgba(40, 167, 69, 0.1); padding: 2px 8px; border-radius: 4px; border: 1px solid #28a745;">
-					<label style="color: #28a745; font-weight:bold; cursor: pointer; display: flex; align-items: center;">
-						<input type="checkbox" id="chk_split_view" onchange="toggleSplitView()"> 獨立多圖
-					</label>
-					
-					<label style="color: #17a2b8; font-weight:bold; cursor: pointer; display: flex; align-items: center; margin-left: 10px; padding-left: 10px; border-left: 1px solid #28a745;">
-						<input type="checkbox" id="chk_popout_view" onchange="togglePopoutView()"> 彈出獨立視窗
-					</label>
-					
-					<div id="split_controls" style="display: none; align-items: center; gap: 5px; border-left: 1px solid #28a745; padding-left: 8px;">
-						<span style="font-size: 12px; color: #28a745;">列數:</span>
-						<input type="range" id="cfg_split_cols" min="1" max="5" value="2" step="1" style="width: 60px; cursor: pointer;" oninput="updateSplitLayout()">
-						<span id="split_cols_val" style="font-size: 12px; font-weight: bold; color: #28a745; min-width: 15px;">2</span>
-					</div>
-				</div>
-				
                 <div style="padding-left: 15px; border-left: 1px solid #ccc; display:flex; gap:5px; align-items:center; margin-right: 15px;">
                     <label title="總儲存筆數">Store:</label>
                     <input type="number" id="cfg_max_points" value="2000" min="100" max="10000" style="width:55px;">
@@ -473,7 +414,6 @@
                         <option value="73">0x49</option>
                         <option value="74">0x4A</option>
                         <option value="75">0x4B</option>
-						<option value="255" class="opt-quad">Quad Board (4ch)</option>
                         <option value="0" style="color:red;">OFF</option>
                     </select>
                     <button class="btn-update" onclick="applyBatchAddr()" title="將此位址套用到下方所有列" style="background-color: #6c757d; color: white; border: none; padding: 2px 8px; cursor: pointer;">Apply</button>
@@ -594,10 +534,7 @@
         
         <div class="chart-box side-chart" id="barBox">
             <div class="box-header" onclick="toggleBox('barBox')">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <p class="box-title" style="margin: 0;">📊 即時值</p>
-                    <button onclick="toggleBarChartAxis(event)" style="padding: 2px 8px; font-size: 12px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-control); color: var(--text-main); cursor: pointer; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">🔄 切換 XY 軸</button>
-                </div>
+                <p class="box-title">📊 即時值</p>
                 <span class="toggle-icon">▼</span>
             </div>
             <div class="box-content">
@@ -607,10 +544,6 @@
             </div>
         </div>
     </div>
-
-
-    <div id="miniChartsContainer" style="display: none; flex-wrap: wrap; gap: 10px; margin-top: 15px;">
-        </div>
 
     <!-- <div class="chart-box full-width" id="colorSettingsBox"> -->
         <!-- <div class="box-header" onclick="toggleBox('colorSettingsBox')"> -->
@@ -1097,7 +1030,7 @@
 
     
 	
-	// 【修正版】關閉所有 TMP117 通道 (解決 Quad Board 無法關閉與重複發送問題)
+	// 【修正】關閉所有 TMP117 通道
     async function disableAllChannels() {
         if (!isConnected) {
             alert("請先連線 (Connect)！");
@@ -1119,10 +1052,6 @@
 
         window.isBulkDisabling = true;
 
-        // [新增] 用來記錄已經處理過的物理通道 ID
-        // 用途：避免 Quad Board (1_1, 1_2...) 重複發送指令
-        let processedPhysicalChannels = new Set();
-
         try {
             // 找出所有 TMP117 通道 (包括舊版 CHx 與新版 TMP117_CHx)
             const targetChannels = Object.keys(globalData.channels).filter(key => 
@@ -1130,29 +1059,15 @@
             );
             
             for (const chKey of targetChannels) {
-                // [修正重點 1] 正確解析出純數字通道號
-                // 步驟 A: 移除前綴 (TMP117_CH 或 CH)
-                let rawStr = chKey.replace('TMP117_CH', '').replace('CH', '');
+                // [修正重點] 正確解析出純數字通道號
+                // 先嘗試移除 TMP117_CH，再移除 CH，確保只剩下數字
+                let ch = chKey.replace('TMP117_CH', '').replace('CH', '');
                 
-                // 步驟 B: 移除 Quad 後綴 (例如 "1_1" -> "1")
-                // 如果沒有底線 (單顆模式)，split 會回傳原字串，不受影響
-                let chId = rawStr.split('_')[0]; 
+                // 發送關閉指令 (CMD:SET_117 <ch> 0)
+                // 這樣 ch 就會是純數字 (例如 "1")，而不是 "TMP117_1"
+                await sendStringCommand(`CMD:SET_117 ${ch} 0`);
                 
-                // [修正重點 2] 檢查這個物理通道是否已經關閉過
-                // 如果 Set 裡面沒有這個 ID，才發送指令
-                if (!processedPhysicalChannels.has(chId)) {
-                    
-                    // 發送關閉指令 (CMD:SET_117 <ch> 0)
-                    await sendStringCommand(`CMD:SET_117 ${chId} 0`);
-                    
-                    // 標記為已處理，下次迴圈遇到同一個 chId (例如 1_2) 就會跳過指令發送
-                    processedPhysicalChannels.add(chId);
-
-                    // 稍微延遲避免指令塞車
-                    await new Promise(r => setTimeout(r, 20));
-                }
-                
-                // 移除圖表數據 (這部分每個 Key 都要執行，因為圖表線條是分開的)
+                // 移除圖表數據 (若有勾選)
                 if (clearOnDisable) {
                     delete globalData.channels[chKey];
                     hiddenChannels.delete(chKey);
@@ -1162,6 +1077,9 @@
                         delete channelAddressMap[chKey];
                     }
                 }
+                
+                // 稍微延遲避免指令塞車
+                await new Promise(r => setTimeout(r, 20));
             }
             
             // 更新畫面
@@ -1231,7 +1149,6 @@
                     <option value="73" ${defaultAddr=="73"?'selected':''}>0x49 (V+)</option>
                     <option value="74" ${defaultAddr=="74"?'selected':''}>0x4A (SDA)</option>
                     <option value="75" ${defaultAddr=="75"?'selected':''}>0x4B (SCL)</option>
-					<option value="255" ${defaultAddr=="255"?'selected':''} class="opt-quad">Quad Board (4ch)</option>
                 </select>
             </label>
             <button class="btn-config btn-row-set" onclick="setSingleRow('${rowId}')" ${isConnected ? '' : 'disabled'}>Set</button>
@@ -1336,55 +1253,34 @@
     }
     
 	function getChannelColor(chName) {
-        // [新增] 1. 安全檢查：防止 chName 為 undefined 或 null 時導致當機
-        if (!chName || typeof chName !== 'string') {
-            return '#888888'; // 回傳灰色作為防呆
-        }
-
-        // 檢查是否有使用者自定義顏色
         if (channelColors[chName]) return channelColors[chName];
 
-        // [邏輯 A] LTC2983 (維持原樣)
         if (chName.startsWith('LTC')) {
+            // 解析 LTC_d_c (Device_Channel)
             const parts = chName.split('_');
+            // parts[0]="LTC", parts[1]="DevID", parts[2]="ChID"
             const devIdx = parseInt(parts[1]) || 1;
             const chIdx  = parseInt(parts[2]) || 1;
             
+            // [修改] 顏色演算法
+            // 基礎色相：Device 1 從 0(紅)開始, Device 2 從 180(青)開始... 
+            // 加上 (通道 * 15) 讓同晶片內的通道顏色錯開
             const baseHue = (devIdx - 1) * 120; 
             const hue = (baseHue + (chIdx * 15)) % 360;
             
             return `hsl(${hue}, 90%, 55%)`;
         } 
-        
-        // [邏輯 B] TMP117 (支援單顆與 Quad 模式)
-        else if (chName.startsWith('TMP117')) { 
-            // 解析名稱：TMP117_CH0 或 TMP117_CH0_1
-            // 1. 移除前綴 -> 剩下 "0" 或 "0_1"
-            let rawStr = chName.replace('TMP117_CH', '');
-            
-            // 2. 切割字串
-            let parts = rawStr.split('_');
-            let mainCh = parseInt(parts[0]) || 0; // 主通道
-            let subCh = 0;                        // 子通道 (預設 0)
-
-            if (parts.length > 1) {
-                subCh = parseInt(parts[1]) || 0;
-            }
-
-            // 3. 計算顏色索引
-            // 為了讓 Quad Board 的 4 條線 (CH0_1 ~ CH0_4) 顏色錯開
-            // 我們把 subCh 加入索引計算。
-            // 例如: CH0 單顆用 index 0
-            //      CH0_1 用 index 1, CH0_2 用 index 2... 
-            // 這樣在 defaultPalette 中會取到不同的顏色
-            let colorIndex = mainCh + subCh; 
-
-            // 4. 從預設調色盤取色
-            return defaultPalette[colorIndex % defaultPalette.length];
+        else if (chName.startsWith('TMP117')) {
+            // TMP117 邏輯不變
+            const chIdx = parseInt(chName.replace('TMP117_CH', '')) || 0;
+            return defaultPalette[chIdx % defaultPalette.length];
+        }
+        else if (chName.startsWith('CH')) {
+            // 舊版相容
+            const chIdx = parseInt(chName.replace('CH', '')) || 0;
+            return defaultPalette[chIdx % defaultPalette.length];
         }
         
-        // [移除] 舊版 CHx 邏輯已刪除
-
         return '#999';
     }
 
@@ -1490,24 +1386,7 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
-                plugins: { legend: { display: false } },
-                // [修正] 補上 scales 定義，解決暗黑模式文字消失與標籤擁擠問題
-                scales: {
-                    x: {
-                        ticks: {
-                            color: '#e0e0e0', // 預設給一個亮色
-                            autoSkip: false,  // [關鍵] 強制顯示所有標籤，不准自動隱藏
-                            maxRotation: 90,  // 允許文字轉 90 度
-                            minRotation: 45   // 最少轉 45 度 (避免重疊)
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            color: '#e0e0e0'
-                        }
-                    }
-                }
+                plugins: { legend: { display: false } }
             }
         });
         toggleDarkMode();
@@ -1697,182 +1576,161 @@
 
         return `#${r}${g}${b}`;
     }
-	// [新增] 輔助函式：統一處理單一通道的數據更新 (包含死鎖偵測與儲存)
-	function updateSingleChannel(chKey, currentVal, receivedKeys) {
-		// 1. 標記此 Key 已接收
-		receivedKeys.add(chKey);
-	
-		// 2. 死鎖偵測 logic (沿用您原本的邏輯)
-		let lastState = channelStuckCounts[chKey] || { lastVal: null, count: 0 };
-		
-		// 注意：這裡加入了簡單的數值檢查，防止剛啟動時的 0 或 Error Code 被誤判
-		if (currentVal === lastState.lastVal && currentVal !== 0 && currentVal > -900) {
-			lastState.count++;
-		} else {
-			lastState.count = 0;
-			lastState.lastVal = currentVal;
-		}
-		channelStuckCounts[chKey] = lastState;
-	
-		// 3. 存入全域資料
-		saveToGlobalData(chKey, currentVal);
-	}
 	
 	function processData(line) {
-		if (!line.startsWith('{')) return;
-		if (isBulkDisabling) return;
-	
-		try {
-			const json = JSON.parse(line);
-			const tmpData = json.TMP117 || json.data;
-			const ltcData = json.LTC2983;
-	
-			if ((!tmpData || tmpData.length === 0) && (!ltcData || ltcData.length === 0)) return;
-	
-			globalSampleCount++;
-			globalData.labels.push(globalSampleCount);
-	
-			// =================================================================
-			// ▼▼▼ [CSV 自動存檔區塊] 支援 Quad Board 陣列格式 ▼▼▼
-			// =================================================================
+        if (!line.startsWith('{')) return;
+        if (isBulkDisabling) return;
+        
+        try {
+            const json = JSON.parse(line);
+            const tmpData = json.TMP117 || json.data;
+            const ltcData = json.LTC2983;
+
+            if ((!tmpData || tmpData.length === 0) && (!ltcData || ltcData.length === 0)) return;
+
+            globalSampleCount++;
+            globalData.labels.push(globalSampleCount);
 			
-			// 1. 產生時間字串
-			const csvNow = new Date();
-			const timeStr = csvNow.getFullYear() + "/" +
-				(csvNow.getMonth() + 1).toString().padStart(2, '0') + "/" +
-				csvNow.getDate().toString().padStart(2, '0') + " " +
-				csvNow.getHours().toString().padStart(2, '0') + ":" +
-				csvNow.getMinutes().toString().padStart(2, '0') + ":" +
-				csvNow.getSeconds().toString().padStart(2, '0') + "." +
-				csvNow.getMilliseconds().toString().padStart(3, '0');
-	
-			// 2. 提取數據 (CSV 用)
-			let csvRowData = {};
-	
-			// (A) 處理 TMP117 (包含陣列判斷)
-			if (tmpData && Array.isArray(tmpData)) {
-				tmpData.forEach(item => {
-					// 判斷是否為 Quad Board (數值是陣列)
-					if (Array.isArray(item.v)) {
-						// [Quad Mode] 展開 4 個數值，建立欄位: TMP117_CH0_1 ~ TMP117_CH0_4
-						item.v.forEach((subVal, idx) => {
-							csvRowData[`TMP117_CH${item.c}_${idx + 1}`] = subVal;
-						});
-					} 
-					else {
-						// [Single Mode] 維持原本邏輯
-						if (item.c !== undefined) {
-							csvRowData[`TMP117_CH${item.c}`] = item.v;
-						} else if (item.a !== undefined) {
-							csvRowData[`T_Addr_${item.a}`] = item.v;
-						}
-					}
-				});
-			}
-	
-			// (B) 處理 LTC2983 (維持原樣)
-			if (ltcData && Array.isArray(ltcData)) {
-				ltcData.forEach(item => {
-					let dev = item.d || 1;
-					if (item.c !== undefined && item.v !== undefined) {
-						csvRowData[`LTC_${dev}_${item.c}`] = item.v;
-					}
-				});
-			}
-	
-			// 3. 送入自動存檔系統
-			if (typeof handleAutoSave === 'function') {
-				handleAutoSave(timeStr, csvRowData);
-			}
-	
-			// =================================================================
-			// ▼▼▼ [圖表資料處理區塊] ▼▼▼
-			// =================================================================
-	
-			let receivedKeys = new Set();
-	
-			// 1. 處理 TMP117
-			if (tmpData && tmpData.length > 0) {
-				lastReceivedData = tmpData;
-	
-				tmpData.forEach((item) => {
-					// [關鍵修改] 判斷數值是否為陣列 (Quad Board)
-					if (Array.isArray(item.v)) {
-						// --- Quad Board 模式 ---
-						item.v.forEach((subVal, subIdx) => {
-							// 建立虛擬通道名稱: TMP117_CH0_1, TMP117_CH0_2...
-							let chKey = `TMP117_CH${item.c}_${subIdx + 1}`;
-							updateSingleChannel(chKey, subVal, receivedKeys);
-						});
-					} 
-					else {
-						// --- Single Board 模式 ---
-						let chKey = `TMP117_CH${item.c}`;
-						updateSingleChannel(chKey, item.v, receivedKeys);
-	
-						// 記錄 Address Map (僅單顆模式有固定 Address)
-						if (item.a !== undefined) {
-							let hexAddr = item.a.toString(16).toUpperCase();
-							channelAddressMap[chKey] = `0x${hexAddr}`;
-						}
-					}
-				});
-			}
-	
-			// 2. 處理 LTC2983 (維持原樣)
-			if (ltcData && ltcData.length > 0) {
-				ltcData.forEach((item) => {
-					let devId = item.d || 1;
-					let chId = item.c;
-					let chKey = `LTC_${devId}_${chId}`;
-					updateSingleChannel(chKey, item.v, receivedKeys);
-				});
-			}
-	
-			// 3. 資料對齊 & Buffer 管理
-			Object.keys(globalData.channels).forEach(existingKey => {
-				if (!receivedKeys.has(existingKey)) {
-					globalData.channels[existingKey].push(null);
-				}
-			});
-	
-			if (globalData.labels.length > MAX_STORED_POINTS) {
-				globalData.labels.shift();
-				Object.values(globalData.channels).forEach(arr => arr.shift());
-			}
-	
-			// 4. 更新 UI 元件
-			updateScrollbarState();
-			updateChartWindow();
-			renderColorInputs(); // 確保新產生的 Quad 通道也能設定顏色
-	
-			// 5. 更新長條圖 (支援陣列拆解)
-			const barChartPayload = [];
-			if (tmpData) {
-				tmpData.forEach(i => {
-					if (Array.isArray(i.v)) {
-						// Quad: 推送 4 條 Bar
-						i.v.forEach((subVal, idx) => {
-							barChartPayload.push({ key: `TMP117_CH${i.c}_${idx + 1}`, val: subVal });
-						});
-					} else {
-						// Single: 推送 1 條 Bar
-						barChartPayload.push({ key: `TMP117_CH${i.c}`, val: i.v });
-					}
-				});
-			}
-			if (ltcData) {
-				ltcData.forEach(i => barChartPayload.push({ key: `LTC_1_${i.c}`, val: i.v }));
-			}
-	
-			if (typeof updateBarChart === 'function') {
-				updateBarChart(barChartPayload);
-			}
-	
-		} catch (e) {
-			console.warn("Parse Error:", e);
-		}
-	}
+            // ▼▼▼ [最終修正版 V3] 自動 CSV 存檔 (修復資料覆蓋與時間格式) ▼▼▼
+            
+            // 1. 產生時間字串 (改用斜線，Excel 支援度較好)
+            const csvNow = new Date();
+            const timeStr = csvNow.getFullYear() + "/" +
+                            (csvNow.getMonth() + 1).toString().padStart(2, '0') + "/" +
+                            csvNow.getDate().toString().padStart(2, '0') + " " +
+                            csvNow.getHours().toString().padStart(2, '0') + ":" +
+                            csvNow.getMinutes().toString().padStart(2, '0') + ":" +
+                            csvNow.getSeconds().toString().padStart(2, '0') + "." +
+                            csvNow.getMilliseconds().toString().padStart(3, '0');
+
+            // 2. 提取數據 (修復欄位名稱，避免 Multiplexer 資料互相覆蓋)
+            let csvRowData = {};
+
+            // (A) 處理 TMP117
+            if (tmpData && Array.isArray(tmpData)) {
+                tmpData.forEach(item => {
+                    // [重點修復] 優先使用 Channel (c) 當作 Key，避免同 Address 覆蓋
+                    // 如果有 item.c (多工器通道)，就用 TMP117_CHx
+                    if (item.c !== undefined) {
+                        csvRowData[`TMP117_CH${item.c}`] = item.v;
+                    } 
+                    // 如果沒有 c 只有 a (直連)，才用 T_Addr_x
+                    else if (item.a !== undefined) {
+                        csvRowData[`T_Addr_${item.a}`] = item.v;
+                    }
+                });
+            }
+
+            // (B) 處理 LTC2983
+            if (ltcData && Array.isArray(ltcData)) {
+                ltcData.forEach(item => {
+                    // 格式改回您習慣的: LTC_1_5 (Device_Channel)
+                    let dev = item.d || 1; 
+                    if (item.c !== undefined && item.v !== undefined) {
+                        csvRowData[`LTC_${dev}_${item.c}`] = item.v;
+                    }
+                });
+            }
+
+            // 3. 送入自動存檔系統
+            if (typeof handleAutoSave === 'function') {
+                handleAutoSave(timeStr, csvRowData);
+            }
+            
+            // ▲▲▲ [修正結束] ▲▲▲
+			
+            let receivedKeys = new Set();
+
+            // =========================================================
+            // 1. 處理 TMP117 -> 命名改為 TMP117_CHx
+            // =========================================================
+            if (tmpData && tmpData.length > 0) {
+                lastReceivedData = tmpData; 
+                
+                tmpData.forEach((item) => {
+                    // [修改] 加上前綴
+                    let chKey = `TMP117_CH${item.c}`; 
+                    receivedKeys.add(chKey);
+                    let currentVal = item.v;
+
+                    // 死鎖偵測
+                    let lastState = channelStuckCounts[chKey] || { lastVal: null, count: 0 };
+                    if (currentVal === lastState.lastVal && currentVal !== 0) {
+                        lastState.count++;
+                    } else {
+                        lastState.count = 0;
+                        lastState.lastVal = currentVal;
+                    }
+                    channelStuckCounts[chKey] = lastState;
+
+                    saveToGlobalData(chKey, currentVal);
+                    
+                    if (item.a !== undefined) {
+                        let hexAddr = item.a.toString(16).toUpperCase();
+                        channelAddressMap[chKey] = `0x${hexAddr}`;
+                    }
+                });
+            }
+
+            // =========================================================
+            // 2. 處理 LTC2983 -> 命名改為 LTC_1_x (預設 Device 1)
+            // =========================================================
+            if (ltcData && ltcData.length > 0) {
+                ltcData.forEach((item) => {
+					
+					let devId = item.d || 1; 
+                    let chId = item.c;                    
+                    // 組合名稱：LTC_1_1, LTC_2_1...
+                    let chKey = `LTC_${devId}_${chId}`;
+
+                    receivedKeys.add(chKey);
+                    let currentVal = item.v;
+
+                    // 死鎖偵測
+                    let lastState = channelStuckCounts[chKey] || { lastVal: null, count: 0 };
+                    if (currentVal === lastState.lastVal && currentVal !== 0) {
+                        lastState.count++;
+                    } else {
+                        lastState.count = 0;
+                        lastState.lastVal = currentVal;
+                    }
+                    channelStuckCounts[chKey] = lastState;
+
+                    saveToGlobalData(chKey, currentVal);
+                });
+            }
+
+            // =========================================================
+            // 3. 資料對齊 & Buffer 管理 (不變)
+            // =========================================================
+            Object.keys(globalData.channels).forEach(existingKey => {
+                if (!receivedKeys.has(existingKey)) {
+                    globalData.channels[existingKey].push(null);
+                }
+            });
+
+            if (globalData.labels.length > MAX_STORED_POINTS) {
+                globalData.labels.shift();
+                Object.values(globalData.channels).forEach(arr => arr.shift());
+            }
+
+            updateScrollbarState();
+            updateChartWindow();
+            
+            // 檢查是否需要新增顏色設定
+            renderColorInputs();
+            
+            // 更新長條圖 (合併數據)
+            const barChartPayload = [];
+            if (tmpData) tmpData.forEach(i => barChartPayload.push({ key: `TMP117_CH${i.c}`, val: i.v }));
+            if (ltcData) ltcData.forEach(i => barChartPayload.push({ key: `LTC_1_${i.c}`, val: i.v }));
+            
+            if (typeof updateBarChart === 'function') {
+                updateBarChart(barChartPayload);
+            }
+
+        } catch (e) { console.warn("Parse Error:", e); }
+    }
 
     function updateScrollbarState() {
         const scrollBar = document.getElementById('historyScroll');
@@ -2008,7 +1866,6 @@
     }
 	
     function updateChartWindow() {
-		let miniChartData = {};
         const scrollBar = document.getElementById('historyScroll');
         let startIndex = parseInt(scrollBar.value);
         let endIndex = startIndex + VIEW_WINDOW_SIZE;
@@ -2040,11 +1897,8 @@
             let latestLiveVal = null;
             for(let i=fullData.length-1; i>=0; i--) {
                 <!-- if(fullData[i] !== null&& fullData[i] > -273.0) { latestLiveVal = fullData[i]; break; } -->
-                if(fullData[i] !== null) { latestLiveVal = fullData[i]; break; }			
+                if(fullData[i] !== null) { latestLiveVal = fullData[i]; break; }
 
-            }
-			if (latestLiveVal !== null) {
-                miniChartData[chName] = latestLiveVal;
             }
 			
 			// 【新增】在迴圈外，只檢查「最新一筆」數值
@@ -2136,9 +1990,6 @@
             historyChart.options.scales.y.max = parseFloat(document.getElementById('yMax').value);
         }
         historyChart.update('none');
-		if (typeof isSplitView !== 'undefined' && isSplitView) {
-            updateMiniChartsData(miniChartData);
-        }
     }
 
 
@@ -2715,107 +2566,12 @@
         updateScrollbarState();
         updateChartWindow();
         updateBarChart([]);
-		// ===== [新增] 清除獨立多圖 (Split View) 的歷史數據與數值 =====
-        if (Object.keys(miniCharts).length > 0) {
-            Object.keys(miniCharts).forEach(chName => {
-                const chart = miniCharts[chName];
-                if (chart) {
-                    // 將小圖表的陣列重新塞滿 null (保持與初始化時相同的狀態)
-                    chart.data.labels = Array(MAX_MINI_HISTORY).fill('');
-                    chart.data.datasets[0].data = Array(MAX_MINI_HISTORY).fill(null);
-                    chart.update('none'); // 無動畫立即更新
-                    
-                    // 重置右上角的即時溫度文字
-                    const valDisplay = document.getElementById(`val_${chName}`);
-                    if (valDisplay) valDisplay.innerText = '--';
-                }
-            });
-        }
-        // =========================================================
-    }
-	
-    // ===========================================
-    //   [修正] 切換長條圖 X/Y 軸功能 (含自動/手動高度調整)
-    // ===========================================
-    window.toggleBarChartAxis = function(event) {
-        if (event) event.stopPropagation(); 
-        if (!currentBarChart) return;
-
-        const currentAxis = currentBarChart.options.indexAxis || 'x';
-        const newAxis = currentAxis === 'x' ? 'y' : 'x';
-        const currentData = currentBarChart.data;
-
-        const isDark = document.body.classList.contains('dark-mode');
-        const textColor = isDark ? '#e0e0e0' : '#666';
-        const gridColor = isDark ? '#444' : '#ddd';
-
-        // 取得圖表的外層容器，用來動態調整高度
-        const wrapper = document.getElementById('currentBarChart').parentElement;
-
-        currentBarChart.destroy();
-
-        let newScales = {};
-        if (newAxis === 'y') {
-            // 【自動展開】水平長條圖：根據目前通道數量計算需要的高度 (每個通道給 20px)
-            // 如果數量少，最少維持 450px；數量多就自動往下長
-            const neededHeight = Math.max(450, currentData.labels.length * 20);
-            wrapper.style.height = neededHeight + 'px';
-
-            newScales = {
-                x: {
-                    beginAtZero: true,
-                    ticks: { color: textColor },
-                    grid: { color: gridColor }
-                },
-                y: {
-                    ticks: { 
-                        color: textColor,
-                        autoSkip: false // 強制顯示所有字
-                    },
-                    grid: { color: gridColor }
-                }
-            };
-        } else {
-            // 【恢復預設】垂直長條圖：恢復原本的 450px
-            wrapper.style.height = '450px';
-
-            newScales = {
-                x: {
-                    ticks: {
-                        color: textColor,
-                        autoSkip: false,
-                        maxRotation: 90,
-                        minRotation: 45
-                    },
-                    grid: { color: gridColor }
-                },
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: textColor },
-                    grid: { color: gridColor }
-                }
-            };
-        }
-
-        const ctxBar = document.getElementById('currentBarChart').getContext('2d');
-        currentBarChart = new Chart(ctxBar, {
-            type: 'bar',
-            data: currentData,
-            options: {
-                indexAxis: newAxis,
-                responsive: true,
-                maintainAspectRatio: false, // 允許高度跟隨外層容器變化
-                animation: false,
-                plugins: { legend: { display: false } },
-                scales: newScales
-            }
-        });
     }
 	// ===========================================
     //   [新增] 設定檔 匯出 / 匯入 功能
     // ===========================================
 
-    // 1. 匯出設定 (完整版：包含 LTC, TMP117, Anomaly, Colors, System)
+// 1. 匯出設定 (完整版：包含 LTC, TMP117, Anomaly, Colors, System)
     function exportSettings() {
         // 確保目前的 UI 設定都已儲存到 LocalStorage
         saveLTCConfigRows();
@@ -2897,46 +2653,11 @@
                 }
 
                 // --- 3. 還原異常偵測規則 ---
-                <!-- if (settings.anomaly_config) { -->
-                    <!-- localStorage.setItem('stm32_anomaly_config', JSON.stringify(settings.anomaly_config)); -->
-                    <!-- loadAnomalyRules(); -->
-                <!-- } -->
-				if (settings.anomaly_config) {
-                    const data = settings.anomaly_config;
-                    
-                    // A. 先存入 LocalStorage (確保下次重整頁面時還在)
-                    localStorage.setItem('stm32_anomaly_config', JSON.stringify(data));
-                    
-                    // B. 清空介面
-                    const container = document.getElementById('anomalyRowsContainer');
-                    if (container) container.innerHTML = ''; 
-
-                    // C. 判斷資料結構並還原
-                    // 情況 1: 標準結構 { rules: [...], filter: true }
-                    if (data.rules && Array.isArray(data.rules)) {
-                        data.rules.forEach(r => {
-                            // 直接呼叫 addAnomalyRow(op, val)
-                            // 如果 JSON 裡有舊的 target 欄位會被自動忽略，只取 op 和 val
-                            addAnomalyRow(r.op, r.val);
-                        });
-                    } 
-                    // 情況 2: 舊版結構 (直接就是陣列) [...]
-                    else if (Array.isArray(data)) {
-                        data.forEach(r => {
-                            addAnomalyRow(r.op, r.val);
-                        });
-                    }
-                    else {
-                        // 防呆: 格式無法識別時，加一列預設值
-                        addAnomalyRow('=', 0);
-                    }
-                    
-                    // D. 還原過濾開關
-                    if (data.filter !== undefined) {
-                        const filterEl = document.getElementById('filterAnomalies');
-                        if (filterEl) filterEl.checked = data.filter;
-                    }
+                if (settings.anomaly_config) {
+                    localStorage.setItem('stm32_anomaly_config', JSON.stringify(settings.anomaly_config));
+                    loadAnomalyRules();
                 }
+
                 // --- 4. 還原顏色設定 ---
                 if (settings.colors) {
                     localStorage.setItem('stm32_channel_colors', JSON.stringify(settings.colors));
@@ -3266,188 +2987,6 @@
         if(typeof tryRestoreFolder === 'function') tryRestoreFolder();
     });
 
-	// ===========================================
-    // [新增] 獨立小圖表功能 (Split View)
-    // ===========================================
-
-    let miniCharts = {}; // 存放 Chart.js 實例
-    let isSplitView = false;
-    const MAX_MINI_HISTORY = 50; // 小圖表保留最近 50 筆數據
-
-    // 1. 切換模式
-    // [修改] 切換模式 (加入滑桿顯示控制)
-    function toggleSplitView() {
-        const chk = document.getElementById('chk_split_view');
-        const container = document.getElementById('miniChartsContainer');
-        const controls = document.getElementById('split_controls'); // 滑桿區域
-
-        isSplitView = chk.checked;
-
-        if (isSplitView) {
-            container.style.display = 'flex';
-            controls.style.display = 'flex'; // 顯示滑桿
-            
-            updateSplitLayout(); // [關鍵] 初始化排版寬度
-            initMiniCharts();
-        } else {
-            container.style.display = 'none';
-            controls.style.display = 'none'; // 隱藏滑桿
-            
-            destroyMiniCharts();
-        }
-    }
-
-    // 2. 初始化所有小圖
-    function initMiniCharts() {
-        const container = document.getElementById('miniChartsContainer');
-        container.innerHTML = ''; // 清空
-        miniCharts = {};
-
-        // 取得所有已知的通道並排序 (邏輯同 renderColorInputs)
-        const channels = Object.keys(globalData.channels).sort((a, b) => {
-            const isLtca = a.startsWith('LTC');
-            const isLtcb = b.startsWith('LTC');
-            if (isLtca !== isLtcb) return isLtca ? 1 : -1;
-            if (!isLtca) { 
-                const numA = parseInt(a.replace('TMP117_CH', '')) || 0;
-                const numB = parseInt(b.replace('TMP117_CH', '')) || 0;
-                return numA - numB;
-            } else {
-                const partsA = a.split('_').map(Number);
-                const partsB = b.split('_').map(Number);
-                if (partsA[1] !== partsB[1]) return partsA[1] - partsB[1];
-                return partsA[2] - partsB[2];
-            }
-        });
-        
-        channels.forEach((chName) => {
-            // 取得顏色
-            let color = getChannelColor(chName);
-            
-            // 取得位址資訊 (如果是 TMP117)
-            let addrInfo = channelAddressMap[chName] ? `(${channelAddressMap[chName]})` : '';
-
-            // 建立 HTML 結構
-            const card = document.createElement('div');
-            card.className = 'mini-chart-card';
-            
-            // 標題與畫布
-            card.innerHTML = `
-                <div style="font-size:14px; font-weight:bold; margin-bottom:5px; color:${color}; display:flex; justify-content:space-between;">
-                    <span>${chName} <span style="font-size:12px; color:gray">${addrInfo}</span></span>
-                    <span id="val_${chName}" style="font-size:16px;">--</span>
-                </div>
-                <div style="height: 200px; width: 100%;">
-                    <canvas id="canvas_${chName}"></canvas>
-                </div>
-            `;
-            container.appendChild(card);
-
-            // 建立 Chart.js 實例 (Line Chart)
-            const ctx = document.getElementById(`canvas_${chName}`).getContext('2d');
-            
-            // 判斷是否為暗黑模式以設定格線顏色
-            const isDark = document.body.classList.contains('dark-mode');
-            const gridColor = isDark ? '#444' : '#ddd';
-
-            miniCharts[chName] = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: Array(MAX_MINI_HISTORY).fill(''), // 預填空標籤
-                    datasets: [{
-                        label: 'Temp',
-                        data: Array(MAX_MINI_HISTORY).fill(null), // 預填空數據
-                        borderColor: color,
-                        backgroundColor: color + '33', // 半透明背景 (Hex + Opacity)
-                        borderWidth: 2,
-                        pointRadius: 0, // 不顯示點，讓線條更平滑
-                        fill: true,
-                        tension: 0.3 // 曲線平滑度
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { 
-                            beginAtZero: false,
-                            grid: { color: gridColor },
-                            ticks: { color: isDark ? '#e0e0e0' : '#666' }
-                        },
-                        x: { display: false } // 隱藏 X 軸標籤以節省空間
-                    }
-                }
-            });
-        });
-    }
-
-    // 3. 清除所有小圖
-    function destroyMiniCharts() {
-        Object.values(miniCharts).forEach(chart => chart.destroy());
-        miniCharts = {};
-        document.getElementById('miniChartsContainer').innerHTML = '';
-    }
-
-	// 4. 更新小圖數據 (包含異常隱藏功能)
-    function updateMiniChartsData(channelValues) {
-        if (!isSplitView) return;
-
-        // [新增] 取得異常過濾開關狀態
-        const filterAnomalies = document.getElementById('filterAnomalies') ? document.getElementById('filterAnomalies').checked : false;
-
-        Object.keys(miniCharts).forEach(chName => {
-            const chart = miniCharts[chName];
-            
-            if (chart && channelValues[chName] !== undefined) {
-                const val = channelValues[chName];
-                
-                // [新增] 異常隱藏邏輯
-                // 取得該圖表的容器卡片 (Card)
-                const canvas = document.getElementById(`canvas_${chName}`);
-                const card = canvas ? canvas.closest('.mini-chart-card') : null;
-
-                if (card) {
-                    // 如果「開啟過濾」且「數值異常」，就隱藏整張卡片
-                    if (filterAnomalies && checkAnomaly(val)) {
-                        card.style.display = 'none';
-                    } else {
-                        // 否則恢復顯示 (清除 inline style 讓它吃原本的 CSS)
-                        card.style.display = ''; 
-                    }
-                }
-
-                // 更新右上角數值顯示
-                const valDisplay = document.getElementById(`val_${chName}`);
-                if (valDisplay) valDisplay.innerText = val.toFixed(2) + '°C';
-
-                // 更新圖表數據 (推入新值，移除舊值)
-                const dataArr = chart.data.datasets[0].data;
-                dataArr.push(val);
-                if (dataArr.length > MAX_MINI_HISTORY) dataArr.shift();
-                
-                chart.update('none'); // 無動畫更新
-            }
-        });
-    }
-	
-	// [新增] 動態調整小圖排版
-    function updateSplitLayout() {
-        const cols = parseInt(document.getElementById('cfg_split_cols').value);
-        document.getElementById('split_cols_val').innerText = cols;
-        
-        // 計算寬度百分比 (扣除 gap 間隙)
-        // 1列=100%, 2列=49%, 3列=32%, 4列=24%...
-        let widthPct = 100;
-        if (cols > 1) {
-            // gap 約 10px，預留一些緩衝空間
-            widthPct = (100 / cols) - 1; 
-        }
-        
-        // 設定 CSS 變數，瞬間套用到所有卡片
-        document.documentElement.style.setProperty('--mini-card-width', `${widthPct}%`);
-    }
 	
 </script>
 

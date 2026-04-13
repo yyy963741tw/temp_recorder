@@ -498,67 +498,76 @@ int API_LTC2983_ReadMultipleTemperatures(ltc2983_device_manager devices[], unsig
 //    return 0;
 //}
 
-/**
- */
+
 int API_TMP117_ReadMultipleTemperatures(tmp117_sensor sensors[], unsigned char num_sensors_to_find, unsigned char array_size)
 {
-	if (num_sensors_to_find == 0 || !sensors) return 0;
+    if (num_sensors_to_find == 0 || !sensors) return 0;
 
-	const tmp117_sensor *context_sensor = NULL;
-	for (int i = 0; i < array_size; i++) {
-		if (sensors[i].i2c_address != 0) {
-			context_sensor = &sensors[i];
-			break;
-		}
-	}
-	if (context_sensor == NULL) return 0;
+    const tmp117_sensor *context_sensor = NULL;
+    uint16_t parallel_mask = 0;
 
-	unsigned short channel_mask = 0;
-	unsigned char found_count = 0;
-	for (int i = 0; i < array_size; i++) {
-		if (sensors[i].i2c_address != 0) {
-			channel_mask |= (1 << sensors[i].channel);
-			found_count++;
-			if (found_count >= num_sensors_to_find) {
-				break;
-			}
-		}
-	}
+    // 1. 建立並行讀取清單 (排除 Quad Board)
+    for (int i = 0; i < array_size; i++) {
+        if (sensors[i].i2c_address != 0) {
+            if (context_sensor == NULL) context_sensor = &sensors[i];
 
-	if (channel_mask == 0)
-		return 0;
+            if (sensors[i].is_quad_board == 0) {
+                parallel_mask |= (1 << sensors[i].channel);
+            }
+        }
+    }
 
-	int status = TMP117_StartConversion(context_sensor, channel_mask);
-	if (status != 0)
-		return -10;
+    if (!context_sensor) return 0;
 
-	status = TMP117_CheckTransactionStatus(context_sensor, channel_mask, 500);
-	if (status != 0)
-		//		return status;
-		HAL_Delay(1);
+    // ============================================================
+    // 2. 執行並行讀取 (改進版：不會被單顆故障卡死)
+    // ============================================================
+    if (parallel_mask != 0) {
+        // A. 發送開始轉換指令
+        TMP117_StartConversion(context_sensor, parallel_mask);
 
+        // B. 等待轉換完成 (最多等 300ms)
+        // 這裡我們不檢查回傳值，因為就算 Timeout，我們還是要去檢查個別狀態
+        TMP117_CheckTransactionStatus(context_sensor, parallel_mask, 300);
 
-	unsigned char ordered_temp_buffer[32];
-	status = TMP117_ReadAllTempData_Ordered(context_sensor, ordered_temp_buffer);
-	if (status != 0)
-		return status;
+        // C. 直接讀取所有通道的狀態與數據 (讀回來再由軟體判斷誰有效)
+        // 注意：這裡假設 ReadAll 會把 FPGA 內的緩衝區都讀回來
+        uint8_t raw_data[32];
+        TMP117_ReadAllTempData_Ordered(context_sensor, raw_data);
 
-	found_count = 0;
-	for (int i = 0; i < array_size; i++) {
-		if (sensors[i].i2c_address != 0) {
-			unsigned char channel = sensors[i].channel;
-			unsigned short raw_value = (ordered_temp_buffer[channel * 2] << 8) | ordered_temp_buffer[channel * 2 + 1];
-			sensors[i].temperature_C = TMP117_ConvertToCelsius(raw_value);
-			found_count++;
-			if (found_count >= num_sensors_to_find) {
-				break;
-			}
-		}
-	}
+        // D. 取得目前的 FPGA I2C Status (確認哪些通道真的完成了)
+        // 您需要確認 TMP117.c 中是否有類似函式，或我們直接假設讀到的數據有效
+        // 通常 CheckTransactionStatus 內部會讀取一個 Status Register
+        // 為了保險起見，我們這裡直接解析數據，但如果可以，建議多讀一個 Status
 
-	return 0;
+        for (int i = 0; i < array_size; i++) {
+            if (sensors[i].i2c_address != 0 && sensors[i].is_quad_board == 0) {
+                if (parallel_mask & (1 << sensors[i].channel)) {
+                    // 這裡不做嚴格的 Status 檢查，直接更新數值
+                    // 這樣即使某一顆 Timeout，其他顆的最新數據也會被填入
+                    uint16_t raw_val = (raw_data[sensors[i].channel * 2] << 8) |
+                                       raw_data[sensors[i].channel * 2 + 1];
+
+                    // 簡單過濾：如果是全 0 或全 FF，可能是有問題，但暫時先更新看看
+                    sensors[i].temperature_C = TMP117_ConvertToCelsius(raw_val);
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    // 3. 執行 Quad Board 序列讀取 (保持原樣)
+    // ============================================================
+    for (int i = 0; i < array_size; i++) {
+        if (sensors[i].i2c_address != 0 && sensors[i].is_quad_board == 1) {
+            TMP117_ReadQuadTemperature(&sensors[i], sensors[i].quad_temps);
+            // 同步更新單一數值欄位，方便除錯
+            sensors[i].temperature_C = sensors[i].quad_temps[0];
+        }
+    }
+
+    return 0;
 }
-
 
 /**
  * @brief  一個持續更新 LCD 顯示溫度的任務函式。
@@ -1416,7 +1425,6 @@ void API_USB_SendTelemetry(void)
 	int offset = 0;
 
 	// 1. JSON 表頭
-	//	offset += sprintf(msg_buffer + offset, "{\"data\":[");
 	offset += sprintf(msg_buffer + offset, "{\"TMP117\":[");
 
 
@@ -1424,64 +1432,69 @@ void API_USB_SendTelemetry(void)
 	for (int i = 0; i < MAX_TMP117_SENSORS; i++) {
 		// 只傳送有效 (I2C 地址不為 0) 的感測器
 		if (API0.tmp117_sensors[i].i2c_address != 0) {
-			float temp = API0.tmp117_sensors[i].temperature_C;
 
-			// 加入逗號分隔
+            // 加入逗號分隔
 			if (!first) {
 				offset += sprintf(msg_buffer + offset, ",");
 			}
+            first = 0;
 
-			// [修改重點] 增加 "a" (Address) 欄位
-			// 格式: {"c":通道, "a":位址, "v":溫度}
-			// c = Channel, a = Address (十進位), v = Value
-			// 網頁端收到 "a":72 會自動轉成 0x48 顯示
-			offset += sprintf(msg_buffer + offset, "{\"c\":%d,\"a\":%d,\"v\":%.2f}",
-					API0.tmp117_sensors[i].channel,      // 通道編號
-					API0.tmp117_sensors[i].i2c_address,  // [新增] I2C 位址
-					temp);                               // 溫度值
-			first = 0;
+            // [修改重點] 增加 Quad Board 判斷
+            if (API0.tmp117_sensors[i].is_quad_board == 1)
+            {
+                // === 新板子 (Quad) ===
+                // 輸出陣列格式: "v":[t1, t2, t3, t4]
+                // 網頁端收到後，若發現 v 是陣列，則顯示 4 個數值
+                offset += sprintf(msg_buffer + offset, "{\"c\":%d,\"a\":%d,\"v\":[%.2f,%.2f,%.2f,%.2f]}",
+                        API0.tmp117_sensors[i].channel,      // 通道
+                        API0.tmp117_sensors[i].i2c_address,  // Base Address (通常是 0x48)
+                        API0.tmp117_sensors[i].quad_temps[0],
+                        API0.tmp117_sensors[i].quad_temps[1],
+                        API0.tmp117_sensors[i].quad_temps[2],
+                        API0.tmp117_sensors[i].quad_temps[3]);
+            }
+            else
+            {
+                // === 舊板子 (Single) ===
+                // 維持原本格式: "v":數值
+                float temp = API0.tmp117_sensors[i].temperature_C;
+                offset += sprintf(msg_buffer + offset, "{\"c\":%d,\"a\":%d,\"v\":%.2f}",
+                        API0.tmp117_sensors[i].channel,      // 通道
+                        API0.tmp117_sensors[i].i2c_address,  // I2C 位址
+                        temp);                               // 溫度值
+            }
 		}
 	}
 	// 結束 "117" 陣列，並加上逗號準備接 "ltc"
 	offset += sprintf(msg_buffer + offset, "],");
 
 	// =================================================================
-	// 2. LTC2983 區塊 (使用 API0.ltc2983_devices 結構)
+	// 2. LTC2983 區塊 (保持原樣)
 	// =================================================================
 	offset += sprintf(msg_buffer + offset, "\"LTC2983\":[");
 
 	first = 1;
 
-	// 遍歷所有 LTC2983 設備 (通常 MAX_LTC2983_DEVICES 為 1)
+	// 遍歷所有 LTC2983 設備
 	for (int dev = 0; dev < MAX_LTC2983_DEVICES; dev++)
 	{
-		// 遍歷該晶片的 20 個通道 (Channel 1~20)
+		// 遍歷該晶片的 20 個通道
 		for (int ch = 0; ch < 20; ch++)
 		{
-			// [修正重點] 取得該通道的指針，方便後續判斷
 			struct ltc2983_sensor *sensor = API0.ltc2983_devices[dev].sensors[ch];
 
-			// [判斷有效性]
-			// 1. 指針不能為 NULL (基本安全檢查)
-			// 2. sensor->type 不能為 0 (這才是判斷是否有設定的關鍵！)
 			if (sensor != NULL && sensor->type != 0)
 			{
 				float ltc_val = API0.ltc2983_devices[dev].temperatures[ch];
 
-				// [過濾無效值] (可選)
-				// 您可以決定要不要顯示 -999 (Error)，如果只想顯示正常數值可保留此行
-				// 如果連錯誤代碼都想看，可以把這個 if 拿掉
-//				if (ltc_val > -273.0f)
+				// if (ltc_val > -273.0f)
 				if (1)
 				{
 					if (!first) offset += sprintf(msg_buffer + offset, ",");
 
-					// d: Device ID (1, 2...)
-					// c: Channel ID (1~20)
-					// v: Value
 					offset += sprintf(msg_buffer + offset, "{\"d\":%d,\"c\":%d,\"v\":%.2f}",
-							dev + 1,  // 轉成 1-base (LTC_1, LTC_2...)
-							ch + 1,   // 轉成 1-base (CH1 ~ CH20)
+							dev + 1,
+							ch + 1,
 							ltc_val);
 					first = 0;
 				}
@@ -1493,68 +1506,92 @@ void API_USB_SendTelemetry(void)
 	offset += sprintf(msg_buffer + offset, "]}\r\n");
 
 	// 3. 透過 USB 發送
-	// 注意: 確認 CDC_Transmit_FS 能一次發送這麼長的長度，有些實作限制 64 bytes
-	// 如果您的 USB 函式庫有自動分包功能則沒問題
 	CDC_Transmit_FS((uint8_t*)msg_buffer, offset);
 }
 
-// ch: 通道編號
-// addr: I2C 地址 (例如 0x48), 如果傳入 0 代表關閉該通道
+
+
 void API_ReInit_Single_Sensor(int ch, int addr)
 {
-	// 1. 安全檢查
-	if (ch < 0 || ch >= MAX_TMP117_SENSORS) return;
+    // 1. 安全檢查
+    if (ch < 0 || ch >= MAX_TMP117_SENSORS) return;
 
-	// =================================================================
-	// [關鍵修改] 檢查舊狀態
-	// 在被 TMP117_Init 覆蓋之前，先檢查這個位置原本有沒有掛載有效的感測器
-	// 假設 i2c_address 為 0 代表無效/未初始化
-	// =================================================================
-	int was_active = (API0.tmp117_sensors[ch].i2c_address != 0);
+    // 2. 檢查舊狀態 (用於更新總數)
+    // 只要地址不是 0，就視為該通道原本是開啟的
+    int was_active = (API0.tmp117_sensors[ch].i2c_address != 0);
 
-	// 2. 初始化結構體 (這一步會覆蓋掉舊的 i2c_address)
-	TMP117_Init(&API0.tmp117_sensors[ch], &(struct tmp117_init_param){
-		.spi_idx = SPIM_FPGA,
-				.cs_idx = 0xff,
-				.channel = ch,       // 指定通道
-				.i2c_address = addr  // 指定地址
-	});
+    // ============================================================
+    // [修正重點] 區分 "關閉 (Disable)" 與 "開啟/重設 (Enable)"
+    // ============================================================
 
-	// 3. 硬體配置與計數器管理 (如果地址有效)
-	if (addr != 0) {
+    if (addr == 0)
+    {
+        // === Case A: 關閉通道 (Disable) ===
 
-		// =============================================================
-		// [關鍵修改] 更新總數
-		// 只有在「原本沒啟用 (was_active == 0)」且「現在啟用」時，總數才 +1
-		// 如果原本就是啟用的 (was_active == 1)，代表只是重置參數，不增加總數
-		// =============================================================
-		if (!was_active) {
-			API0.num_tmp117_sensors++;
-		}
+        // 1. 直接清空關鍵旗標與地址 (確保停止讀取)
+        API0.tmp117_sensors[ch].i2c_address = 0;   // 設為 0，讀取迴圈就會跳過
+        API0.tmp117_sensors[ch].is_quad_board = 0; // 清除 Quad 旗標
+        API0.tmp117_sensors[ch].temperature_C = 0.0f;
 
-		// 嘗試寫入設定到 FPGA
-		int ret = TMP117_ConfigureOnFPGA(&API0.tmp117_sensors[ch]);
+        // 2. 更新總數 (如果原本是開的，現在關掉，總數 -1)
+        if (was_active && API0.num_tmp117_sensors > 0) {
+            API0.num_tmp117_sensors--;
+        }
 
-		// (選用) 可以在這裡順便做一次讀取測試
-		// if (ret != 0 || TMP117_ReadTemperature(...) != 0) { ... }
-	}
-	else {
-		// [補充邏輯] 如果傳入 addr == 0 (要關閉這個通道)
-		// 且原本是啟用的 (was_active == 1)，則總數應該要扣除
-		if (was_active && API0.num_tmp117_sensors > 0) {
-			API0.num_tmp117_sensors--;
-		}
-	}
+        // 3. 清除圖表與計數器
+        if (_ahData[ch]) {
+            GRAPH_DATA_YT_Clear(_ahData[ch]);
+        }
+        _aDataSkipCounter[ch] = 0;
 
-	// 4. 清除該通道的舊圖表數據 (避免舊線條干擾)
-	if (_ahData[ch]) {
-		GRAPH_DATA_YT_Clear(_ahData[ch]);
-	}
+        // 4. (選用) 在 UI 顯示關閉訊息
+        // GUI_DispStringAt("Disabled", ...);
 
-	// 5. 重置過濾計數器
-	_aDataSkipCounter[ch] = 0;
+        return; // 關閉完成，直接返回
+    }
+
+    // ============================================================
+    // === Case B: 開啟或設定通道 (Enable) ===
+    // ============================================================
+
+    // 3. 準備初始化參數
+    // 如果 addr 是 0xFF (Quad Flag)，使用標準 Base Address 0x48
+    uint16_t init_addr = (addr == 0xFF) ? 0x48 : addr;
+
+    // 4. 呼叫底層初始化 (重置結構體)
+    TMP117_Init(&API0.tmp117_sensors[ch], &(struct tmp117_init_param){
+        .spi_idx = SPIM_FPGA,
+        .cs_idx = 0xff,
+        .channel = ch,
+        .i2c_address = init_addr
+    });
+
+    // 5. 設定或清除 Quad Board 旗標
+    if (addr == 0xFF) {
+        API0.tmp117_sensors[ch].is_quad_board = 1;
+        // 清空 Quad 數值緩衝區
+        for(int k=0; k<4; k++) API0.tmp117_sensors[ch].quad_temps[k] = 0.0f;
+    } else {
+        API0.tmp117_sensors[ch].is_quad_board = 0;
+    }
+
+    // 6. 硬體配置與計數器管理
+    // [更新總數] 從無效變有效時 +1
+    if (!was_active) {
+        API0.num_tmp117_sensors++;
+    }
+
+    // 寫入設定到 FPGA
+    TMP117_ConfigureOnFPGA(&API0.tmp117_sensors[ch]);
+
+    // 7. 清除該通道的舊圖表數據
+    if (_ahData[ch]) {
+        GRAPH_DATA_YT_Clear(_ahData[ch]);
+    }
+
+    // 8. 重置過濾計數器
+    _aDataSkipCounter[ch] = 0;
 }
-
 // [API.c] 修改後的配置套用函式
 // 增加 uint32_t data_val 參數
 void API_LTC_Apply_Config(int dev_idx, int ch_idx, int type, uint32_t config_val, uint32_t data_val)

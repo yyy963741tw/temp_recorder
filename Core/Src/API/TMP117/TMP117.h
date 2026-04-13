@@ -24,21 +24,25 @@ extern "C" {
  * It holds all information needed to interact with it via its controlling FPGA.
  */
 typedef struct {
-    SPIM_IDX spi_idx;           // SPI interface for the FPGA
-    int cs_idx;                 // Chip Select index for the FPGA
-    unsigned char channel;      // FPGA I2C channel (0-15)
-    unsigned char i2c_address;  // The 7-bit I2C slave address of this sensor
-    float temperature_C;        // Stores the last read temperature in Celsius
+	SPIM_IDX spi_idx;           // SPI interface for the FPGA
+	int cs_idx;                 // Chip Select index for the FPGA
+	unsigned char channel;      // FPGA I2C channel (0-15)
+	unsigned char i2c_address;  // The 7-bit I2C slave address of this sensor
+	float temperature_C;        // Stores the last read temperature in Celsius
+	// --- 新增以下欄位 ---
+	uint8_t is_quad_board;  // 標記：這是不是那塊接 4 顆的板子？ (1=是, 0=否)
+	float quad_temps[4];    // 存放 4 個溫度值
+	// ------------------
 } tmp117_sensor;
 
 /**
  * @brief Initialization parameter structure for a single TMP117 sensor.
  */
 struct tmp117_init_param {
-    SPIM_IDX spi_idx;
-    int cs_idx;
-    unsigned char channel;
-    unsigned char i2c_address;
+	SPIM_IDX spi_idx;
+	int cs_idx;
+	unsigned char channel;
+	unsigned char i2c_address;
 };
 
 
@@ -47,6 +51,8 @@ int TMP117_StartConversion(const tmp117_sensor *sensor, unsigned short channel_m
 int TMP117_CheckTransactionStatus(const tmp117_sensor *sensor, unsigned short channel_mask, unsigned int timeout_ms);
 int TMP117_ReadAllTempData_Ordered(const tmp117_sensor *sensor, unsigned char *ordered_temp_buffer);
 
+// 新增：讀取單一通道上的 4 顆 TMP117 (地址 0x48 ~ 0x4B)
+int TMP117_ReadQuadTemperature(tmp117_sensor *sensor, float *temp_array);
 /**
  * @brief Initializes a single TMP117 sensor structure.
  * This function simply copies configuration data into the struct. It does not communicate with hardware.
