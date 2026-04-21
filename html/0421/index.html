@@ -2136,7 +2136,7 @@
             historyChart.options.scales.y.max = parseFloat(document.getElementById('yMax').value);
         }
         historyChart.update('none');
-		if (typeof isSplitView !== 'undefined' && (isSplitView || isPopoutView)) {
+		if (typeof isSplitView !== 'undefined' && isSplitView) {
             updateMiniChartsData(miniChartData);
         }
     }
@@ -2717,17 +2717,16 @@
         updateBarChart([]);
 		// ===== [新增] 清除獨立多圖 (Split View) 的歷史數據與數值 =====
         if (Object.keys(miniCharts).length > 0) {
-            // 判斷目前應該抓取哪個 Document (主視窗 或 彈出視窗)
-            const targetDoc = (isPopoutView && popoutWin && !popoutWin.closed) ? popoutWin.document : document;
-            
             Object.keys(miniCharts).forEach(chName => {
                 const chart = miniCharts[chName];
                 if (chart) {
+                    // 將小圖表的陣列重新塞滿 null (保持與初始化時相同的狀態)
                     chart.data.labels = Array(MAX_MINI_HISTORY).fill('');
                     chart.data.datasets[0].data = Array(MAX_MINI_HISTORY).fill(null);
-                    chart.update('none'); 
+                    chart.update('none'); // 無動畫立即更新
                     
-                    const valDisplay = targetDoc.getElementById(`val_${chName}`);
+                    // 重置右上角的即時溫度文字
+                    const valDisplay = document.getElementById(`val_${chName}`);
                     if (valDisplay) valDisplay.innerText = '--';
                 }
             });
@@ -3268,148 +3267,43 @@
     });
 
 	// ===========================================
-    // [新增] 獨立小圖表與彈出視窗功能 (Split View & Popout)
+    // [新增] 獨立小圖表功能 (Split View)
     // ===========================================
 
-    let miniCharts = {}; 
+    let miniCharts = {}; // 存放 Chart.js 實例
     let isSplitView = false;
-    let isPopoutView = false; // 新增：是否為彈出視窗模式
-    let popoutWin = null;     // 新增：儲存彈出視窗的物件
-    const MAX_MINI_HISTORY = 50; 
+    const MAX_MINI_HISTORY = 50; // 小圖表保留最近 50 筆數據
 
-    // 1. 切換主視窗的獨立多圖
+    // 1. 切換模式
+    // [修改] 切換模式 (加入滑桿顯示控制)
     function toggleSplitView() {
         const chk = document.getElementById('chk_split_view');
-        const chkPopout = document.getElementById('chk_popout_view');
         const container = document.getElementById('miniChartsContainer');
-        const controls = document.getElementById('split_controls');
+        const controls = document.getElementById('split_controls'); // 滑桿區域
 
         isSplitView = chk.checked;
 
         if (isSplitView) {
-            // 若勾選主視窗顯示，則自動取消彈出視窗
-            if (isPopoutView) {
-                chkPopout.checked = false;
-                togglePopoutView();
-            }
             container.style.display = 'flex';
-            controls.style.display = 'flex';
-            updateSplitLayout(); 
-            initMiniCharts(document, window);
+            controls.style.display = 'flex'; // 顯示滑桿
+            
+            updateSplitLayout(); // [關鍵] 初始化排版寬度
+            initMiniCharts();
         } else {
             container.style.display = 'none';
-            controls.style.display = 'none';
-            destroyMiniCharts();
-        }
-    }
-
-    // 2. [新增] 切換彈出獨立視窗
-    function togglePopoutView() {
-        const chkPopout = document.getElementById('chk_popout_view');
-        const chkSplit = document.getElementById('chk_split_view');
-        isPopoutView = chkPopout.checked;
-
-        if (isPopoutView) {
-            // 勾選彈出視窗時，關閉主視窗的多圖
-            if (isSplitView) {
-                chkSplit.checked = false;
-                toggleSplitView();
-            }
-
-            // 開啟新視窗
-            popoutWin = window.open('', 'MiniChartsWindow', 'width=1000,height=600,menubar=no,toolbar=no,location=no,status=no');
+            controls.style.display = 'none'; // 隱藏滑桿
             
-            // 取得目前的暗黑模式狀態來套用顏色
-            const isDark = document.body.classList.contains('dark-mode');
-            const bgBody = isDark ? '#121212' : '#f4f6f9';
-            const textMain = isDark ? '#e0e0e0' : '#212529';
-            const bgContainer = isDark ? '#1e1e1e' : '#ffffff';
-            const borderColor = isDark ? '#444' : '#e9ecef';
-
-            // 將 HTML 與 Chart.js 寫入新視窗
-            popoutWin.document.write(`
-                <!DOCTYPE html>
-                <html lang="zh-TW">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>STM32 獨立多圖監控 (Popout)</title>
-                    <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
-                    <style>
-                        body { background: ${bgBody}; color: ${textMain}; font-family: 'Segoe UI', sans-serif; padding: 15px; margin: 0; }
-                        #popoutContainer { display: flex; flex-wrap: wrap; gap: 10px; }
-                        .mini-chart-card {
-                            background: ${bgContainer}; border: 1px solid ${borderColor}; border-radius: 8px; padding: 10px;
-                            width: 48%; height: 250px; box-sizing: border-box; margin-bottom: 10px;
-                            box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: width 0.2s ease;
-                        }
-                        @media (max-width: 768px) { .mini-chart-card { width: 100% !important; } }
-                    </style>
-                </head>
-                <body class="${isDark ? 'dark-mode' : ''}">
-                    <div style="margin-bottom: 15px; border-bottom: 1px solid ${borderColor}; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                        <h2 style="margin: 0; font-size: 18px;">📊 獨立多圖監控 (分離視窗)</h2>
-                        <div>
-                            排版列數: <input type="range" id="popout_cols" min="1" max="5" value="2" step="1" style="width: 80px; cursor: pointer; vertical-align: middle;">
-                            <span id="popout_cols_val" style="font-weight: bold; margin-left: 5px;">2</span>
-                        </div>
-                    </div>
-                    <div id="popoutContainer"></div>
-                    <script>
-                        // 讓子視窗也有自己的排版拉桿功能
-                        document.getElementById('popout_cols').addEventListener('input', function(e) {
-                            const cols = e.target.value;
-                            document.getElementById('popout_cols_val').innerText = cols;
-                            let widthPct = 100;
-                            if (cols > 1) widthPct = (100 / cols) - 1.5; 
-                            const cards = document.querySelectorAll('.mini-chart-card');
-                            cards.forEach(card => card.style.width = widthPct + '%');
-                        });
-                    <\/script>
-                </body>
-                </html>
-            `);
-            popoutWin.document.close();
-
-            // 監聽子視窗被使用者手動關閉的事件
-            popoutWin.onbeforeunload = function() {
-                document.getElementById('chk_popout_view').checked = false;
-                isPopoutView = false;
-                destroyMiniCharts();
-            };
-
-            // 遞迴檢查 Chart.js 是否已在子視窗載入完成
-            const checkChartAndInit = (retries = 10) => {
-                if (isPopoutView && popoutWin && !popoutWin.closed) {
-                    if (typeof popoutWin.Chart === 'function') {
-                        initMiniCharts(popoutWin.document, popoutWin);
-                    } else if (retries > 0) {
-                        setTimeout(() => checkChartAndInit(retries - 1), 200);
-                    } else {
-                        alert("獨立視窗載入圖表庫失敗，請檢查網路連線。");
-                    }
-                }
-            };
-            setTimeout(checkChartAndInit, 300);
-
-        } else {
-            // 取消勾選時關閉視窗
-            if (popoutWin && !popoutWin.closed) {
-                popoutWin.close();
-            }
-            popoutWin = null;
             destroyMiniCharts();
         }
     }
 
-    // 3. 初始化所有小圖 (動態對應 targetDoc 與 targetWin)
-    function initMiniCharts(targetDoc = document, targetWin = window) {
-        const containerId = (targetDoc === document) ? 'miniChartsContainer' : 'popoutContainer';
-        const container = targetDoc.getElementById(containerId);
-        if (!container) return;
-        
-        container.innerHTML = ''; 
+    // 2. 初始化所有小圖
+    function initMiniCharts() {
+        const container = document.getElementById('miniChartsContainer');
+        container.innerHTML = ''; // 清空
         miniCharts = {};
 
+        // 取得所有已知的通道並排序 (邏輯同 renderColorInputs)
         const channels = Object.keys(globalData.channels).sort((a, b) => {
             const isLtca = a.startsWith('LTC');
             const isLtcb = b.startsWith('LTC');
@@ -3427,11 +3321,17 @@
         });
         
         channels.forEach((chName) => {
+            // 取得顏色
             let color = getChannelColor(chName);
+            
+            // 取得位址資訊 (如果是 TMP117)
             let addrInfo = channelAddressMap[chName] ? `(${channelAddressMap[chName]})` : '';
 
-            const card = targetDoc.createElement('div');
+            // 建立 HTML 結構
+            const card = document.createElement('div');
             card.className = 'mini-chart-card';
+            
+            // 標題與畫布
             card.innerHTML = `
                 <div style="font-size:14px; font-weight:bold; margin-bottom:5px; color:${color}; display:flex; justify-content:space-between;">
                     <span>${chName} <span style="font-size:12px; color:gray">${addrInfo}</span></span>
@@ -3443,24 +3343,26 @@
             `;
             container.appendChild(card);
 
-            const ctx = targetDoc.getElementById(`canvas_${chName}`).getContext('2d');
-            const isDark = targetDoc.body.classList.contains('dark-mode');
+            // 建立 Chart.js 實例 (Line Chart)
+            const ctx = document.getElementById(`canvas_${chName}`).getContext('2d');
+            
+            // 判斷是否為暗黑模式以設定格線顏色
+            const isDark = document.body.classList.contains('dark-mode');
             const gridColor = isDark ? '#444' : '#ddd';
 
-            // 【關鍵】使用目標視窗的 Chart.js 引擎來渲染
-            miniCharts[chName] = new targetWin.Chart(ctx, {
+            miniCharts[chName] = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: Array(MAX_MINI_HISTORY).fill(''),
+                    labels: Array(MAX_MINI_HISTORY).fill(''), // 預填空標籤
                     datasets: [{
                         label: 'Temp',
-                        data: Array(MAX_MINI_HISTORY).fill(null),
+                        data: Array(MAX_MINI_HISTORY).fill(null), // 預填空數據
                         borderColor: color,
-                        backgroundColor: color + '33',
+                        backgroundColor: color + '33', // 半透明背景 (Hex + Opacity)
                         borderWidth: 2,
-                        pointRadius: 0,
+                        pointRadius: 0, // 不顯示點，讓線條更平滑
                         fill: true,
-                        tension: 0.3
+                        tension: 0.3 // 曲線平滑度
                     }]
                 },
                 options: {
@@ -3474,37 +3376,26 @@
                             grid: { color: gridColor },
                             ticks: { color: isDark ? '#e0e0e0' : '#666' }
                         },
-                        x: { display: false }
+                        x: { display: false } // 隱藏 X 軸標籤以節省空間
                     }
                 }
             });
         });
     }
 
-    // 4. 清除所有小圖
+    // 3. 清除所有小圖
     function destroyMiniCharts() {
-        Object.values(miniCharts).forEach(chart => {
-            if(chart) chart.destroy();
-        });
+        Object.values(miniCharts).forEach(chart => chart.destroy());
         miniCharts = {};
-        
-        const mainContainer = document.getElementById('miniChartsContainer');
-        if(mainContainer) mainContainer.innerHTML = '';
-        
-        if(popoutWin && !popoutWin.closed) {
-            const popContainer = popoutWin.document.getElementById('popoutContainer');
-            if(popContainer) popContainer.innerHTML = '';
-        }
+        document.getElementById('miniChartsContainer').innerHTML = '';
     }
 
-    // 5. 更新小圖數據
+	// 4. 更新小圖數據 (包含異常隱藏功能)
     function updateMiniChartsData(channelValues) {
-        if (!isSplitView && !isPopoutView) return; 
+        if (!isSplitView) return;
 
+        // [新增] 取得異常過濾開關狀態
         const filterAnomalies = document.getElementById('filterAnomalies') ? document.getElementById('filterAnomalies').checked : false;
-
-        // 判斷當下是哪個視窗在運作
-        const targetDoc = (isPopoutView && popoutWin && !popoutWin.closed) ? popoutWin.document : document;
 
         Object.keys(miniCharts).forEach(chName => {
             const chart = miniCharts[chName];
@@ -3512,35 +3403,49 @@
             if (chart && channelValues[chName] !== undefined) {
                 const val = channelValues[chName];
                 
-                const canvas = targetDoc.getElementById(`canvas_${chName}`);
+                // [新增] 異常隱藏邏輯
+                // 取得該圖表的容器卡片 (Card)
+                const canvas = document.getElementById(`canvas_${chName}`);
                 const card = canvas ? canvas.closest('.mini-chart-card') : null;
 
                 if (card) {
+                    // 如果「開啟過濾」且「數值異常」，就隱藏整張卡片
                     if (filterAnomalies && checkAnomaly(val)) {
                         card.style.display = 'none';
                     } else {
+                        // 否則恢復顯示 (清除 inline style 讓它吃原本的 CSS)
                         card.style.display = ''; 
                     }
                 }
 
-                const valDisplay = targetDoc.getElementById(`val_${chName}`);
+                // 更新右上角數值顯示
+                const valDisplay = document.getElementById(`val_${chName}`);
                 if (valDisplay) valDisplay.innerText = val.toFixed(2) + '°C';
 
+                // 更新圖表數據 (推入新值，移除舊值)
                 const dataArr = chart.data.datasets[0].data;
                 dataArr.push(val);
                 if (dataArr.length > MAX_MINI_HISTORY) dataArr.shift();
                 
-                chart.update('none'); 
+                chart.update('none'); // 無動畫更新
             }
         });
     }
-
-    // 6. 動態調整小圖排版 (主視窗專用)
+	
+	// [新增] 動態調整小圖排版
     function updateSplitLayout() {
         const cols = parseInt(document.getElementById('cfg_split_cols').value);
         document.getElementById('split_cols_val').innerText = cols;
+        
+        // 計算寬度百分比 (扣除 gap 間隙)
+        // 1列=100%, 2列=49%, 3列=32%, 4列=24%...
         let widthPct = 100;
-        if (cols > 1) widthPct = (100 / cols) - 1; 
+        if (cols > 1) {
+            // gap 約 10px，預留一些緩衝空間
+            widthPct = (100 / cols) - 1; 
+        }
+        
+        // 設定 CSS 變數，瞬間套用到所有卡片
         document.documentElement.style.setProperty('--mini-card-width', `${widthPct}%`);
     }
 	
