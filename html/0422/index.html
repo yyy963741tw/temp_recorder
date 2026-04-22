@@ -335,14 +335,11 @@
         
         <div class="header-row">
             
-			<div class="control-group" style="flex-direction: column; align-items: flex-start; min-width: 200px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-                    <h3 style="margin: 0;">🔌 設備連線</h3>
-                    <button id="connectBtn" class="btn-connect" style="font-size: 12px; padding: 4px 8px;">➕ 新增設備</button>
-                </div>
-                <div id="deviceList" style="display: flex; flex-direction: column; gap: 5px; width: 100%; margin-top: 8px;">
-                    <div style="font-size: 13px; color: var(--text-sub); font-style: italic;">目前無設備連線...</div>
-                </div>
+            <div class="control-group">
+                <h3>🔌 連線</h3>
+                <button id="connectBtn" class="btn-connect">連接</button>
+                <button id="disconnectBtn" class="btn-disconnect" disabled>斷開</button>
+                <span id="status" class="status-badge status-disconnected">未連線</span>
             </div>
 
             <div class="control-group">
@@ -707,16 +704,8 @@
 	let channelStuckCounts = {}; // 記錄每個通道數值重複的次數
     <!-- const STUCK_THRESHOLD = 20;  // 閾值：連續 20 筆資料完全相同視為異常 (約 2秒) -->
     let stuckThreshold = 5;
-	// === [多埠架構升級] 連線狀態管理 ===
-    let activePorts = {}; // 儲存所有連線的字典：{ "COM_1": { port, reader, writer... }, "COM_2": {...} }
-    let portCounter = 0;  // 用來產生獨立的 Port ID
-
-    // 巧妙的向下相容技巧：把 isConnected 變成一個動態抓取的屬性
-    // 只要有任何一個設備連線中，它就會回傳 true，這樣原本的防呆邏輯就不用改！
-    Object.defineProperty(window, 'isConnected', {
-        get: function() { return Object.keys(activePorts).length > 0; }
-    });
-    // ===================================
+	let port, reader, writer, inputDone, outputDone;
+    let isConnected = false;
     const defaultPalette = ['#36a2eb', '#ff6384', '#4bc0c0', '#ff9f40', '#9966ff', '#ffcd56', '#c9cbcf'];
     
     let channelColors = {};
@@ -1091,39 +1080,24 @@
         // alert(`已發送設定: ${ms}ms`); // 覺得太吵可以註解掉這行
     }
 
-    // [多埠架構升級] 發送字串指令
-    async function sendStringCommand(cmdString, targetPortId = null) {
-        // 如果沒有指定目標 Port (例如舊版的 Set 按鈕)，預設抓第一個已連線的設備
-        if (!targetPortId) {
-            const connectedPorts = Object.keys(activePorts);
-            if (connectedPorts.length === 0) {
-                alert("請先連接設備！");
-                return;
-            }
-            targetPortId = connectedPorts[0]; 
-        }
-
-        const pData = activePorts[targetPortId];
-        if (!pData || !pData.writer) {
-            alert(`設備 ${targetPortId} 無法發送指令！`);
+    async function sendStringCommand(cmdString) {
+        if (!isConnected || !writer) {
+            alert("請先連接設備！");
             return;
         }
-
         try {
             const data = cmdString + "\r\n";
-            await pData.writer.write(data);			
-            
-            // 日誌標示是發給哪一個 Port
-            appendLog(`TX [${targetPortId}]`, cmdString);			
-            console.log(`Sent Command to ${targetPortId}:`, data.trim());
+            await writer.write(data);			
+			appendLog("TX", cmdString);			
+            console.log("Sent Command:", data.trim());
         } catch (e) {
-            alert(`發送給 ${targetPortId} 失敗: ` + e);
+            alert("發送失敗: " + e);
         }
     }
 
     
 	
-	// 【修正版】關閉所有 TMP117 通道 (支援多埠前綴解析與 Quad Board)
+	// 【修正版】關閉所有 TMP117 通道 (解決 Quad Board 無法關閉與重複發送問題)
     async function disableAllChannels() {
         if (!isConnected) {
             alert("請先連線 (Connect)！");
@@ -1132,6 +1106,7 @@
         
         if (window.isBulkDisabling) return; 
 
+        // 1. 取得選項狀態
         const chkBox = document.getElementById('clearDataOnDisable');
         const clearOnDisable = chkBox ? chkBox.checked : false;
 
@@ -1144,44 +1119,52 @@
 
         window.isBulkDisabling = true;
 
-        // 記錄已經處理過的 [Port_實體通道] 組合，避免 Quad Board 重複發送
+        // [新增] 用來記錄已經處理過的物理通道 ID
+        // 用途：避免 Quad Board (1_1, 1_2...) 重複發送指令
         let processedPhysicalChannels = new Set();
 
         try {
-            // [修正1] 改用 .includes 尋找 TMP117_CH 關鍵字
+            // 找出所有 TMP117 通道 (包括舊版 CHx 與新版 TMP117_CHx)
             const targetChannels = Object.keys(globalData.channels).filter(key => 
-                key.includes('TMP117_CH')
+                key.startsWith('CH') || key.startsWith('TMP117_CH')
             );
             
             for (const chKey of targetChannels) {
-				// [修正] 不管前面的 ID 是什麼，統統抓出來
-                const match = chKey.match(/^(.+?)_TMP117_CH(\d+)(?:_\d+)?$/);
-                if (!match) continue;
-
-                const portId = match[1];
-                const chId = match[2]; // 這裡會抓到純數字的主通道號 (例如 0, 5)
-
-                // 產生獨一無二的實體識別碼 (例: COM_1_0)，避免不同板子的 CH0 互相干擾
-                const uniqueId = `${portId}_${chId}`;
+                // [修正重點 1] 正確解析出純數字通道號
+                // 步驟 A: 移除前綴 (TMP117_CH 或 CH)
+                let rawStr = chKey.replace('TMP117_CH', '').replace('CH', '');
                 
-                if (!processedPhysicalChannels.has(uniqueId)) {
-                    // [修正3] 指定發送給對應的 portId
-                    await sendStringCommand(`CMD:SET_117 ${chId} 0`, portId);
+                // 步驟 B: 移除 Quad 後綴 (例如 "1_1" -> "1")
+                // 如果沒有底線 (單顆模式)，split 會回傳原字串，不受影響
+                let chId = rawStr.split('_')[0]; 
+                
+                // [修正重點 2] 檢查這個物理通道是否已經關閉過
+                // 如果 Set 裡面沒有這個 ID，才發送指令
+                if (!processedPhysicalChannels.has(chId)) {
                     
-                    processedPhysicalChannels.add(uniqueId);
+                    // 發送關閉指令 (CMD:SET_117 <ch> 0)
+                    await sendStringCommand(`CMD:SET_117 ${chId} 0`);
+                    
+                    // 標記為已處理，下次迴圈遇到同一個 chId (例如 1_2) 就會跳過指令發送
+                    processedPhysicalChannels.add(chId);
+
+                    // 稍微延遲避免指令塞車
                     await new Promise(r => setTimeout(r, 20));
                 }
                 
+                // 移除圖表數據 (這部分每個 Key 都要執行，因為圖表線條是分開的)
                 if (clearOnDisable) {
                     delete globalData.channels[chKey];
                     hiddenChannels.delete(chKey);
                     
+                    // 順便清除位址紀錄
                     if (channelAddressMap[chKey]) {
                         delete channelAddressMap[chKey];
                     }
                 }
             }
             
+            // 更新畫面
             updateChartWindow();
             
         } catch (error) {
@@ -1353,40 +1336,55 @@
     }
     
 	function getChannelColor(chName) {
+        // [新增] 1. 安全檢查：防止 chName 為 undefined 或 null 時導致當機
         if (!chName || typeof chName !== 'string') {
-            return '#888888';
+            return '#888888'; // 回傳灰色作為防呆
         }
 
+        // 檢查是否有使用者自定義顏色
         if (channelColors[chName]) return channelColors[chName];
 
-        // [關鍵修改] 把前面的 ID 前綴砍掉，只留 TMP117_xxx 或 LTC_xxx 來算顏色
-        let cleanName = chName;
-        if (chName.includes('_TMP117')) cleanName = chName.substring(chName.indexOf('TMP117'));
-        if (chName.includes('_LTC')) cleanName = chName.substring(chName.indexOf('LTC'));
-
-        // 以下邏輯不變，使用 cleanName 計算
-        if (cleanName.startsWith('LTC')) {
-            const parts = cleanName.split('_');
+        // [邏輯 A] LTC2983 (維持原樣)
+        if (chName.startsWith('LTC')) {
+            const parts = chName.split('_');
             const devIdx = parseInt(parts[1]) || 1;
             const chIdx  = parseInt(parts[2]) || 1;
+            
             const baseHue = (devIdx - 1) * 120; 
             const hue = (baseHue + (chIdx * 15)) % 360;
+            
             return `hsl(${hue}, 90%, 55%)`;
         } 
-        else if (cleanName.startsWith('TMP117')) { 
-            let rawStr = cleanName.replace('TMP117_CH', '');
+        
+        // [邏輯 B] TMP117 (支援單顆與 Quad 模式)
+        else if (chName.startsWith('TMP117')) { 
+            // 解析名稱：TMP117_CH0 或 TMP117_CH0_1
+            // 1. 移除前綴 -> 剩下 "0" 或 "0_1"
+            let rawStr = chName.replace('TMP117_CH', '');
+            
+            // 2. 切割字串
             let parts = rawStr.split('_');
-            let mainCh = parseInt(parts[0]) || 0; 
-            let subCh = 0;                        
+            let mainCh = parseInt(parts[0]) || 0; // 主通道
+            let subCh = 0;                        // 子通道 (預設 0)
 
             if (parts.length > 1) {
                 subCh = parseInt(parts[1]) || 0;
             }
 
+            // 3. 計算顏色索引
+            // 為了讓 Quad Board 的 4 條線 (CH0_1 ~ CH0_4) 顏色錯開
+            // 我們把 subCh 加入索引計算。
+            // 例如: CH0 單顆用 index 0
+            //      CH0_1 用 index 1, CH0_2 用 index 2... 
+            // 這樣在 defaultPalette 中會取到不同的顏色
             let colorIndex = mainCh + subCh; 
+
+            // 4. 從預設調色盤取色
             return defaultPalette[colorIndex % defaultPalette.length];
         }
         
+        // [移除] 舊版 CHx 邏輯已刪除
+
         return '#999';
     }
 
@@ -1516,171 +1514,80 @@
     }
     initCharts();
 
-    // ===========================================
-    //   [多埠架構] 連線與讀取邏輯
-    // ===========================================
-
-    // 1. 監聽實體 USB 拔除事件
     navigator.serial.addEventListener("disconnect", (event) => {
-        // 找出是哪一個 port 被實體拔除
-        for (const [portId, pData] of Object.entries(activePorts)) {
-            if (pData.port === event.target) {
-                closeConnection(portId, true);
-                break;
-            }
-        }
+        if (port && event.target === port) closeConnection(true);
     });
 
-    // 2. 點擊「新增設備」
     document.getElementById('connectBtn').addEventListener('click', async () => {
         try {
-            const port = await navigator.serial.requestPort();
+            port = await navigator.serial.requestPort();
             await port.open({ baudRate: 115200 });
-            
-            portCounter++;
-            const portId = `COM_${portCounter}`; // 給予獨立 ID
-            
             const textDecoder = new TextDecoderStream();
-            const inputDone = port.readable.pipeTo(textDecoder.writable);
-            const reader = textDecoder.readable.getReader();
-            
+            inputDone = port.readable.pipeTo(textDecoder.writable);
+            reader = textDecoder.readable.getReader();
             const textEncoder = new TextEncoderStream();
-            const outputDone = textEncoder.readable.pipeTo(port.writable);
-            const writer = textEncoder.writable.getWriter();
-            
-            // 存入全域字典
-            activePorts[portId] = {
-                port: port,
-                reader: reader,
-                writer: writer,
-                inputDone: inputDone,
-                outputDone: outputDone,
-				deviceId: "" // [新增] 用來儲存從硬體讀到的唯一 ID
-            };
-            
-            updateDeviceListUI();
-            updateUIState();
-            
-            // 啟動專屬的這個 Port 的讀取迴圈 (傳入 portId)
-            readLoop(portId);
-            
-			// [新增] 連線成功後，立刻偷偷問這塊板子是誰
-            setTimeout(() => {
-                sendStringCommand("CMD:WHOAMI", portId);
-            }, 500); // 延遲 0.5 秒發送，確保硬體已準備好接收
-			
-        } catch (err) { 
-            console.log('取消選取或連線失敗: ', err); 
-        }
+            outputDone = textEncoder.readable.pipeTo(port.writable);
+            writer = textEncoder.writable.getWriter();
+            updateUIState(true);
+            readLoop();
+        } catch (err) { alert('連線失敗: ' + err); }
     });
 
-    // 3. 關閉單一連線
-    window.closeConnection = async function(portId, isPhysical) {
-        const pData = activePorts[portId];
-        if (!pData) return;
+    document.getElementById('disconnectBtn').addEventListener('click', () => closeConnection(false));
 
-        if (pData.reader) await pData.reader.cancel().catch(()=>{});
-        if (pData.writer) { await pData.writer.close().catch(()=>{}); pData.writer = null; }
-        if (pData.inputDone) await pData.inputDone.catch(()=>{});
-        if (pData.outputDone) await pData.outputDone.catch(()=>{});
-        if (pData.port) { await pData.port.close().catch(()=>{}); pData.port = null; }
-        
-        delete activePorts[portId]; // 從字典中移除該設備
-        
-        updateDeviceListUI();
-        updateUIState();
-        
-        if(isPhysical) alert(`⚠️ 設備 ${portId} 線路實體斷開！`);
+    async function closeConnection(isPhysical) {
+        if (!isConnected) return;
+        if (reader) await reader.cancel().catch(()=>{});
+        if (writer) { await writer.close().catch(()=>{}); writer = null; }
+        if (inputDone) await inputDone.catch(()=>{});
+        if (outputDone) await outputDone.catch(()=>{});
+        if (port) { await port.close().catch(()=>{}); port = null; }
+        updateUIState(false);
+        if(isPhysical) alert("⚠️ 線路斷開！");
     }
 
-    // 4. 專屬讀取迴圈 (獨立運行)
-    async function readLoop(portId) {
+    async function readLoop() {
         let buffer = "";
-        const pData = activePorts[portId];
-        
         try {
-            while (activePorts[portId]) { 
-                const { value, done } = await pData.reader.read();
+            while (true) {
+                const { value, done } = await reader.read();
                 if (done) break;
                 if (value) {
                     buffer += value;
                     let lines = buffer.split('\n');
                     buffer = lines.pop(); 
-                    for (let line of lines) {
+					for (let line of lines) {
                         let trimmedLine = line.trim();
                         if (trimmedLine) {
-							// ===== [關鍵升級] 攔截 WHOAMI 身分回傳 =====
-                            if (trimmedLine.startsWith("IAM:")) {
-                                const realId = trimmedLine.replace("IAM:", "").trim();
-                                
-                                // 1. 將字典裡的連線資料，搬移到以「真實 ID」命名的房間
-                                activePorts[realId] = activePorts[portId];
-                                delete activePorts[portId]; // 拆除原本的臨時房間 (如 COM_1)
-                                
-                                // 2. 把迴圈目前的變數 portId 正式替換為真實 ID！
-                                portId = realId;
-                                
-                                updateDeviceListUI(); // 更新畫面
-                                appendLog(`系統`, `✅ 設備綁定成功：${realId}`);
-                                continue; 
-                            }
-                            // ============================================
-							
-                            // 日誌標示來源 Port
-                            appendLog(`RX [${portId}]`, trimmedLine);
+                            // 【新增這行】紀錄接收到的原始數據
+                            appendLog("RX", trimmedLine);
                             
-                            // 偷偷把 portId 傳給 processData (下一步會用到)
-                            processData(trimmedLine, portId); 
+                            processData(trimmedLine);
                         }
-                    }	
+					}	
                 }
             }
-        } catch (e) { 
-            console.warn(`${portId} Read Error:`, e); 
-        } finally { 
-            if(pData && pData.reader) pData.reader.releaseLock(); 
-        }
+        } catch (e) { console.warn(e); } 
+        finally { if(reader) reader.releaseLock(); }
     }
 
-    // 5. 更新設備清單介面
-    function updateDeviceListUI() {
-        const listDiv = document.getElementById('deviceList');
-        listDiv.innerHTML = ''; 
-        
-        const portIds = Object.keys(activePorts);
-        
-        if (portIds.length === 0) {
-            listDiv.innerHTML = `<div style="font-size: 13px; color: var(--text-sub); font-style: italic;">目前無設備連線...</div>`;
-            return;
-        }
-
-        portIds.forEach(id => {
-			
-            const item = document.createElement('div');
-            item.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: rgba(40, 167, 69, 0.1); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(40, 167, 69, 0.2);";
-
-            item.innerHTML = `
-                <span style="font-size: 13px; font-weight: bold; color: #28a745;">✅ 板子_${id}</span>
-                <button class="btn-disconnect" onclick="closeConnection('${id}', false)" style="padding: 2px 6px; font-size: 11px;">斷開</button>
-            `;
-            listDiv.appendChild(item);
-        });
-    }
-
-    // 6. 更新整體 UI 禁用狀態
-    function updateUIState() {
-        const connected = window.isConnected; // 透過 getter 判斷是否至少有一台連線
-        
+    function updateUIState(connected) {
+        isConnected = connected;
+        document.getElementById('status').innerText = connected ? "✅ 已連線" : "❌ 未連線";
+        document.getElementById('status').className = connected ? "status-badge status-connected" : "status-badge status-disconnected";
+        document.getElementById('connectBtn').disabled = connected;
+        document.getElementById('disconnectBtn').disabled = !connected;
         document.getElementById('btn_set_all').disabled = !connected;
         document.getElementById('btn_disable_all').disabled = !connected; 
         document.querySelectorAll('.btn-row-set').forEach(btn => btn.disabled = !connected);
-        
-        const btnSetAllLTC = document.getElementById('btn_set_all_ltc');
+		
+		const btnSetAllLTC = document.getElementById('btn_set_all_ltc');
         if(btnSetAllLTC) btnSetAllLTC.disabled = !connected;
 
         const btnDisableAllLTC = document.getElementById('btn_disable_all_ltc');
         if(btnDisableAllLTC) btnDisableAllLTC.disabled = !connected;
 
+        // 控制每一列 LTC 的 Set 按鈕 (需搭配第三步修改 class)
         document.querySelectorAll('.btn-ltc-row-set').forEach(btn => btn.disabled = !connected);
     }
 
@@ -1699,7 +1606,7 @@
     let renderedChannels = new Set();
 
     // [新增] 渲染顏色設定介面
-   // [修改] 渲染顏色設定介面 (支援多埠前綴與聰明排序)
+   // [修改] 渲染顏色設定介面 (包含更聰明的排序)
     function renderColorInputs() {
         const containerTMP = document.getElementById('containerTMP');
         const containerLTC = document.getElementById('containerLTC');
@@ -1708,33 +1615,26 @@
 
         // 取得所有通道並排序
         const channels = Object.keys(globalData.channels).sort((a, b) => {
-            // 1. 比較類型 (改用 includes 避開 COM_x_ 前綴)
-            const isLtca = a.includes('_LTC_');
-            const isLtcb = b.includes('_LTC_');
+            // 1. 比較類型 (TMP 排前面)
+            const isLtca = a.startsWith('LTC');
+            const isLtcb = b.startsWith('LTC');
             if (isLtca !== isLtcb) return isLtca ? 1 : -1; // TMP first
 
             // 2. 同類型比較數字
             if (!isLtca) { 
-                // TMP117 排序：利用正則抓出主通道數字
-                const matchA = a.match(/TMP117_CH(\d+)/);
-                const matchB = b.match(/TMP117_CH(\d+)/);
-                const numA = matchA ? parseInt(matchA[1]) : 0;
-                const numB = matchB ? parseInt(matchB[1]) : 0;
+                // 都是 TMP117_CHx
+                const numA = parseInt(a.replace('TMP117_CH', '')) || 0;
+                const numB = parseInt(b.replace('TMP117_CH', '')) || 0;
                 return numA - numB;
             } else {
-                // LTC 排序：利用正則抓出 Dev 與 Ch 數字
-                const matchA = a.match(/_LTC_(\d+)_(\d+)/);
-                const matchB = b.match(/_LTC_(\d+)_(\d+)/);
+                // 都是 LTC_x_y -> 先比 x (Device)，再比 y (Channel)
+                const partsA = a.split('_').map(Number); // [NaN, 1, 1]
+                const partsB = b.split('_').map(Number);
                 
-                const devA = matchA ? parseInt(matchA[1]) : 0;
-                const devB = matchB ? parseInt(matchB[1]) : 0;
-                // 先比 Device ID
-                if (devA !== devB) return devA - devB;
-                
-                // 再比 Channel ID
-                const chA = matchA ? parseInt(matchA[2]) : 0;
-                const chB = matchB ? parseInt(matchB[2]) : 0;
-                return chA - chB;
+                // 比 Device ID (index 1)
+                if (partsA[1] !== partsB[1]) return partsA[1] - partsB[1];
+                // 比 Channel ID (index 2)
+                return partsA[2] - partsB[2];
             }
         });
 
@@ -1758,8 +1658,8 @@
                 updateChartWindow();
             });
 
-            // 分類放入對應容器 (同樣改用 includes 判斷)
-            if (chName.includes('_LTC_')) {
+            // 分類放入對應容器
+            if (chName.startsWith('LTC')) {
                 containerLTC.appendChild(div);
             } else {
                 containerTMP.appendChild(div);
@@ -1818,140 +1718,161 @@
 		saveToGlobalData(chKey, currentVal);
 	}
 	
-	function processData(line, portId = "COM_1") { // 加入 portId 參數
-        if (!line.startsWith('{')) return;
-        if (isBulkDisabling) return;
-
-        try {
-            const json = JSON.parse(line);
-            const tmpData = json.TMP117 || json.data;
-            const ltcData = json.LTC2983;
-
-            if ((!tmpData || tmpData.length === 0) && (!ltcData || ltcData.length === 0)) return;
-
-            globalSampleCount++;
-            globalData.labels.push(globalSampleCount);
-
-            // =================================================================
-            // ▼▼▼ [CSV 自動存檔區塊] ▼▼▼
-            // =================================================================
-            const csvNow = new Date();
-            const timeStr = csvNow.getFullYear() + "/" +
-                (csvNow.getMonth() + 1).toString().padStart(2, '0') + "/" +
-                csvNow.getDate().toString().padStart(2, '0') + " " +
-                csvNow.getHours().toString().padStart(2, '0') + ":" +
-                csvNow.getMinutes().toString().padStart(2, '0') + ":" +
-                csvNow.getSeconds().toString().padStart(2, '0') + "." +
-                csvNow.getMilliseconds().toString().padStart(3, '0');
-
-            let csvRowData = {};
-
-            if (tmpData && Array.isArray(tmpData)) {
-                tmpData.forEach(item => {
-                    if (Array.isArray(item.v)) {
-                        item.v.forEach((subVal, idx) => {
-                            // [關鍵修改] 變數名稱加上 Port 前綴
-                            csvRowData[`${portId}_TMP117_CH${item.c}_${idx + 1}`] = subVal;
-                        });
-                    } 
-                    else {
-                        if (item.c !== undefined) {
-                            csvRowData[`${portId}_TMP117_CH${item.c}`] = item.v;
-                        } else if (item.a !== undefined) {
-                            csvRowData[`${portId}_T_Addr_${item.a}`] = item.v;
-                        }
-                    }
-                });
-            }
-
-            if (ltcData && Array.isArray(ltcData)) {
-                ltcData.forEach(item => {
-                    let dev = item.d || 1;
-                    if (item.c !== undefined && item.v !== undefined) {
-                        csvRowData[`${portId}_LTC_${dev}_${item.c}`] = item.v;
-                    }
-                });
-            }
-
-            if (typeof handleAutoSave === 'function') {
-                handleAutoSave(timeStr, csvRowData);
-            }
-
-            // =================================================================
-            // ▼▼▼ [圖表資料處理區塊] ▼▼▼
-            // =================================================================
-            let receivedKeys = new Set();
-
-            if (tmpData && tmpData.length > 0) {
-                lastReceivedData = tmpData;
-                tmpData.forEach((item) => {
-                    if (Array.isArray(item.v)) {
-                        item.v.forEach((subVal, subIdx) => {
-                            // [關鍵修改] Key 加上 Port 前綴
-                            let chKey = `${portId}_TMP117_CH${item.c}_${subIdx + 1}`;
-                            updateSingleChannel(chKey, subVal, receivedKeys);
-                        });
-                    } else {
-                        let chKey = `${portId}_TMP117_CH${item.c}`;
-                        updateSingleChannel(chKey, item.v, receivedKeys);
-
-                        if (item.a !== undefined) {
-                            let hexAddr = item.a.toString(16).toUpperCase();
-                            channelAddressMap[chKey] = `0x${hexAddr}`;
-                        }
-                    }
-                });
-            }
-
-            if (ltcData && ltcData.length > 0) {
-                ltcData.forEach((item) => {
-                    let devId = item.d || 1;
-                    let chId = item.c;
-                    let chKey = `${portId}_LTC_${devId}_${chId}`;
-                    updateSingleChannel(chKey, item.v, receivedKeys);
-                });
-            }
-
-            Object.keys(globalData.channels).forEach(existingKey => {
-                if (!receivedKeys.has(existingKey)) {
-                    globalData.channels[existingKey].push(null);
-                }
-            });
-
-            if (globalData.labels.length > MAX_STORED_POINTS) {
-                globalData.labels.shift();
-                Object.values(globalData.channels).forEach(arr => arr.shift());
-            }
-
-            updateScrollbarState();
-            updateChartWindow();
-            renderColorInputs();
-
-            // 5. 更新長條圖 (支援陣列拆解)
-            const barChartPayload = [];
-            if (tmpData) {
-                tmpData.forEach(i => {
-                    if (Array.isArray(i.v)) {
-                        i.v.forEach((subVal, idx) => {
-                            barChartPayload.push({ key: `${portId}_TMP117_CH${i.c}_${idx + 1}`, val: subVal });
-                        });
-                    } else {
-                        barChartPayload.push({ key: `${portId}_TMP117_CH${i.c}`, val: i.v });
-                    }
-                });
-            }
-            if (ltcData) {
-                ltcData.forEach(i => barChartPayload.push({ key: `${portId}_LTC_1_${i.c}`, val: i.v }));
-            }
-
-            if (typeof updateBarChart === 'function') {
-                updateBarChart(barChartPayload);
-            }
-
-        } catch (e) {
-            console.warn("Parse Error:", e);
-        }
-    }
+	function processData(line) {
+		if (!line.startsWith('{')) return;
+		if (isBulkDisabling) return;
+	
+		try {
+			const json = JSON.parse(line);
+			const tmpData = json.TMP117 || json.data;
+			const ltcData = json.LTC2983;
+	
+			if ((!tmpData || tmpData.length === 0) && (!ltcData || ltcData.length === 0)) return;
+	
+			globalSampleCount++;
+			globalData.labels.push(globalSampleCount);
+	
+			// =================================================================
+			// ▼▼▼ [CSV 自動存檔區塊] 支援 Quad Board 陣列格式 ▼▼▼
+			// =================================================================
+			
+			// 1. 產生時間字串
+			const csvNow = new Date();
+			const timeStr = csvNow.getFullYear() + "/" +
+				(csvNow.getMonth() + 1).toString().padStart(2, '0') + "/" +
+				csvNow.getDate().toString().padStart(2, '0') + " " +
+				csvNow.getHours().toString().padStart(2, '0') + ":" +
+				csvNow.getMinutes().toString().padStart(2, '0') + ":" +
+				csvNow.getSeconds().toString().padStart(2, '0') + "." +
+				csvNow.getMilliseconds().toString().padStart(3, '0');
+	
+			// 2. 提取數據 (CSV 用)
+			let csvRowData = {};
+	
+			// (A) 處理 TMP117 (包含陣列判斷)
+			if (tmpData && Array.isArray(tmpData)) {
+				tmpData.forEach(item => {
+					// 判斷是否為 Quad Board (數值是陣列)
+					if (Array.isArray(item.v)) {
+						// [Quad Mode] 展開 4 個數值，建立欄位: TMP117_CH0_1 ~ TMP117_CH0_4
+						item.v.forEach((subVal, idx) => {
+							csvRowData[`TMP117_CH${item.c}_${idx + 1}`] = subVal;
+						});
+					} 
+					else {
+						// [Single Mode] 維持原本邏輯
+						if (item.c !== undefined) {
+							csvRowData[`TMP117_CH${item.c}`] = item.v;
+						} else if (item.a !== undefined) {
+							csvRowData[`T_Addr_${item.a}`] = item.v;
+						}
+					}
+				});
+			}
+	
+			// (B) 處理 LTC2983 (維持原樣)
+			if (ltcData && Array.isArray(ltcData)) {
+				ltcData.forEach(item => {
+					let dev = item.d || 1;
+					if (item.c !== undefined && item.v !== undefined) {
+						csvRowData[`LTC_${dev}_${item.c}`] = item.v;
+					}
+				});
+			}
+	
+			// 3. 送入自動存檔系統
+			if (typeof handleAutoSave === 'function') {
+				handleAutoSave(timeStr, csvRowData);
+			}
+	
+			// =================================================================
+			// ▼▼▼ [圖表資料處理區塊] ▼▼▼
+			// =================================================================
+	
+			let receivedKeys = new Set();
+	
+			// 1. 處理 TMP117
+			if (tmpData && tmpData.length > 0) {
+				lastReceivedData = tmpData;
+	
+				tmpData.forEach((item) => {
+					// [關鍵修改] 判斷數值是否為陣列 (Quad Board)
+					if (Array.isArray(item.v)) {
+						// --- Quad Board 模式 ---
+						item.v.forEach((subVal, subIdx) => {
+							// 建立虛擬通道名稱: TMP117_CH0_1, TMP117_CH0_2...
+							let chKey = `TMP117_CH${item.c}_${subIdx + 1}`;
+							updateSingleChannel(chKey, subVal, receivedKeys);
+						});
+					} 
+					else {
+						// --- Single Board 模式 ---
+						let chKey = `TMP117_CH${item.c}`;
+						updateSingleChannel(chKey, item.v, receivedKeys);
+	
+						// 記錄 Address Map (僅單顆模式有固定 Address)
+						if (item.a !== undefined) {
+							let hexAddr = item.a.toString(16).toUpperCase();
+							channelAddressMap[chKey] = `0x${hexAddr}`;
+						}
+					}
+				});
+			}
+	
+			// 2. 處理 LTC2983 (維持原樣)
+			if (ltcData && ltcData.length > 0) {
+				ltcData.forEach((item) => {
+					let devId = item.d || 1;
+					let chId = item.c;
+					let chKey = `LTC_${devId}_${chId}`;
+					updateSingleChannel(chKey, item.v, receivedKeys);
+				});
+			}
+	
+			// 3. 資料對齊 & Buffer 管理
+			Object.keys(globalData.channels).forEach(existingKey => {
+				if (!receivedKeys.has(existingKey)) {
+					globalData.channels[existingKey].push(null);
+				}
+			});
+	
+			if (globalData.labels.length > MAX_STORED_POINTS) {
+				globalData.labels.shift();
+				Object.values(globalData.channels).forEach(arr => arr.shift());
+			}
+	
+			// 4. 更新 UI 元件
+			updateScrollbarState();
+			updateChartWindow();
+			renderColorInputs(); // 確保新產生的 Quad 通道也能設定顏色
+	
+			// 5. 更新長條圖 (支援陣列拆解)
+			const barChartPayload = [];
+			if (tmpData) {
+				tmpData.forEach(i => {
+					if (Array.isArray(i.v)) {
+						// Quad: 推送 4 條 Bar
+						i.v.forEach((subVal, idx) => {
+							barChartPayload.push({ key: `TMP117_CH${i.c}_${idx + 1}`, val: subVal });
+						});
+					} else {
+						// Single: 推送 1 條 Bar
+						barChartPayload.push({ key: `TMP117_CH${i.c}`, val: i.v });
+					}
+				});
+			}
+			if (ltcData) {
+				ltcData.forEach(i => barChartPayload.push({ key: `LTC_1_${i.c}`, val: i.v }));
+			}
+	
+			if (typeof updateBarChart === 'function') {
+				updateBarChart(barChartPayload);
+			}
+	
+		} catch (e) {
+			console.warn("Parse Error:", e);
+		}
+	}
 
     function updateScrollbarState() {
         const scrollBar = document.getElementById('historyScroll');
@@ -2693,7 +2614,7 @@
         }
     }
 	
-	// 【修正版】關閉所有 LTC 通道 (支援多埠前綴解析)
+	// 【新增】關閉所有 LTC 通道
     async function disableAllLTCChannels() {
         if (!isConnected) {
             alert("請先連線 (Connect)！");
@@ -2702,12 +2623,16 @@
         
         if (window.isBulkDisabling) return; 
 
+        // 1. 取得選項狀態
+        // 使用安全寫法，防止找不到元素報錯
         const chkClear = document.getElementById('clearDataOnDisableLTC');
         const clearData = chkClear ? chkClear.checked : false;
         
         const chkSkip = document.getElementById('skipDisableConfirmLTC');
         const skipConfirm = chkSkip ? chkSkip.checked : false;
 
+        // 2. 確認視窗邏輯 (修正版)
+        // 如果 "沒有勾選跳過" (skipConfirm 為 false)，才跳出詢問
         if (!skipConfirm) {
             if (!confirm("確定要關閉所有 LTC2983 通道嗎？")) return;
         }
@@ -2716,25 +2641,27 @@
 
         try {
             const allKeys = Object.keys(globalData.channels);
-            // [修正1] 改用 .includes 尋找 LTC 關鍵字，而不是 startsWith
-            const ltcKeys = allKeys.filter(k => k.includes('LTC'));
+            const ltcKeys = allKeys.filter(k => k.startsWith('LTC'));
             
             if (ltcKeys.length === 0) {
+                // 沒有通道也沒關係，只是解鎖並返回
                 window.isBulkDisabling = false;
                 return;
             }
 
             for (const chKey of ltcKeys) {
-				// [修正] 不管前面的 ID 是什麼，統統抓出來
-                const match = chKey.match(/^(.+?)_LTC_(\d+)_(\d+)$/);
-                if (!match) continue;
+                const parts = chKey.split('_');
+                let dev = 1, ch = 1;
+                
+                if (parts.length === 3) {
+                    dev = parts[1];
+                    ch = parts[2];
+                } else if (parts.length === 2) {
+                    dev = 1; 
+                    ch = parts[1];
+                }
 
-                const portId = match[1];
-                const dev = match[2];
-                const ch = match[3];
-
-                // [修正3] 指定指令要發送給哪一個 portId
-                await sendStringCommand(`CMD:SET_LTC ${dev} ${ch} 0`, portId);
+                await sendStringCommand(`CMD:SET_LTC ${dev} ${ch} 0`);
                 
                 if (clearData) {
                     delete globalData.channels[chKey];
